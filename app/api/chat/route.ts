@@ -28,36 +28,20 @@ export async function POST(req: NextRequest) {
     const { message }: ChatRequest = await req.json();
 
     if (!message?.trim()) {
-      return NextResponse.json(
-        { error: "The scholar demands actual input, you vacuous fool." },
-        { status: 400 }
-      );
+      return NextResponse.json({
+        response: "Say something you fucking idiot, yea"
+      });
     }
 
     if (!NVIDIA_NIM_API_KEY) {
       return NextResponse.json({
-        response:
-          "By Zeus's withered beard, the NVIDIA API key is missing! Configure it in your .env file, or I shall be forced to endure silence for eternity, *yea.*",
+        response: "No fucking API key. Add NVIDIA_NIM_API_KEY to .env, yea"
       });
     }
 
     const messages: ChatMessage[] = [
       { role: "system", content: NEGAA_SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: `Correct the following text for grammar, spelling, and punctuation errors. Provide the corrected version and explain the mistakes in your character's voice:
-
-"${message}"
-
-Respond in this format:
-[DRAMATIC REACTION]
-
-**Corrected version:** [the corrected text]
-
-**Explanation:** [your brutally honest explanation]
-
-Remember to end with "yea"`,
-      },
+      { role: "user", content: message },
     ];
 
     const response = await fetch(`${NVIDIA_NIM_BASE_URL}/chat/completions`, {
@@ -70,17 +54,14 @@ Remember to end with "yea"`,
         model: "meta/llama-3.1-70b-instruct",
         messages: messages,
         temperature: 0.9,
-        max_tokens: 512,
+        max_tokens: 300,
         top_p: 0.9,
       }),
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("NVIDIA NIM API error:", errorText);
       return NextResponse.json({
-        response:
-          "The oracle speaks not! NVIDIA's services appear to be as reliable as a medieval plague doctor. Try again, if you possess the courage, *yea.*",
+        response: "Some fucked up error happened. Try again, yea"
       });
     }
 
@@ -89,17 +70,14 @@ Remember to end with "yea"`,
 
     if (!assistantMessage) {
       return NextResponse.json({
-        response:
-          "The scholar's mind has gone blank! A rare occurrence, much like your correct usage of 'their' and 'there'. Try again, *yea.*",
+        response: "My fucking brain stopped working. Try again, yea"
       });
     }
 
     return NextResponse.json({ response: assistantMessage });
   } catch (error) {
-    console.error("Chat API error:", error);
     return NextResponse.json({
-      response:
-        "Sweet merciful Zeus, an error has befallen us! The ancient scrolls are in disarray. Technical difficulties plague us all. Try again, if you dare, *yea.*",
+      response: "Everything fucking broke. Try again, yea"
     });
   }
 }
