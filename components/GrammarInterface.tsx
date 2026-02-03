@@ -12,6 +12,10 @@ const EXAMPLE_PROMPTS = [
   "Your the worst person ever, their is no way your gonna win.",
   "Me and him went to the mall and bought some stuffs.",
   "I seen him at the park yesterday.",
+  "Where you going at? I ain't seen you in awhile.",
+  "The affect of the weather on my mood is real bad.",
+  "Alot of people make these type of mistakes irregardless of education.",
+  "Should of, would of, could of — but didn't.",
 ];
 
 const LOADING_MESSAGES = [
