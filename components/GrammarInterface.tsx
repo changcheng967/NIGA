@@ -98,15 +98,17 @@ export default function GrammarInterface() {
 
         setIsLoading(true);
         try {
-          const result = await window.puter.ai.speech2txt({
-            file: audioBlob,
-            model: "whisper-1",
-            language: "en"
+          // Use Puter.js STT with English-only language hint
+          const result = await window.puter.ai.speech2txt(audioBlob, {
+            language: "en",
+            model: "gpt-4o-mini-transcribe"
           });
           const transcript = result.text || result;
           setInput(transcript);
-        } catch (error) {
+        } catch (error: any) {
           console.error("STT error:", error);
+          console.error("Error details:", JSON.stringify(error));
+          console.error("Puter available:", !!window.puter?.ai);
           setInput("fuck, didn't catch that");
         } finally {
           setIsLoading(false);
