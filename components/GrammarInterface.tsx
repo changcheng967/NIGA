@@ -53,6 +53,8 @@ export default function GrammarInterface() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -62,6 +64,16 @@ export default function GrammarInterface() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,6 +121,12 @@ export default function GrammarInterface() {
 
   const clearHistory = () => {
     setMessages([]);
+    // Stop any playing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setPlayingIndex(null);
   };
 
   const copyToClipboard = async (text: string, index: number) => {
@@ -119,6 +137,61 @@ export default function GrammarInterface() {
     } catch (err) {
       console.error("Failed to copy:", err);
     }
+  };
+
+  const playVoice = async (text: string, index: number) => {
+    // Stop any currently playing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+
+    setPlayingIndex(index);
+
+    try {
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Voice synthesis failed");
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        setPlayingIndex(null);
+        URL.revokeObjectURL(audioUrl);
+        audioRef.current = null;
+      };
+
+      audio.onerror = () => {
+        setPlayingIndex(null);
+        URL.revokeObjectURL(audioUrl);
+        audioRef.current = null;
+      };
+
+      await audio.play();
+    } catch (error) {
+      console.error("Voice playback error:", error);
+      setPlayingIndex(null);
+      // Don't alert - just fail silently as per UX best practices
+    }
+  };
+
+  const stopVoice = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setPlayingIndex(null);
   };
 
   return (
@@ -158,25 +231,46 @@ export default function GrammarInterface() {
                     : "bg-zinc-950 border border-zinc-800 text-zinc-100"
                 }`}
               >
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                <p className="text-sm leading-relaxed whitespace-pre-wrap pr-16">
                   {message.content}
                 </p>
-                {message.role === "assistant" && extractCorrectedText(message.content) && (
-                  <button
-                    onClick={() => copyToClipboard(extractCorrectedText(message.content)!, index)}
-                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-400 text-xs"
-                    title="Copy corrected text"
-                  >
-                    {copiedIndex === index ? (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
+                {message.role === "assistant" && (
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* Voice play/stop button */}
+                    <button
+                      onClick={() => playingIndex === index ? stopVoice() : playVoice(message.content, index)}
+                      className="p-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-400 text-xs"
+                      title={playingIndex === index ? "Stop" : "Hear the scholar's voice"}
+                    >
+                      {playingIndex === index ? (
+                        <svg className="w-4 h-4 animate-pulse" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        </svg>
+                      )}
+                    </button>
+                    {/* Copy button */}
+                    {extractCorrectedText(message.content) && (
+                      <button
+                        onClick={() => copyToClipboard(extractCorrectedText(message.content)!, index)}
+                        className="p-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-400 text-xs"
+                        title="Copy corrected text"
+                      >
+                        {copiedIndex === index ? (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        )}
+                      </button>
                     )}
-                  </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -229,7 +323,7 @@ export default function GrammarInterface() {
       </form>
 
       <p className="text-zinc-600 text-xs mt-3 text-center">
-        Press Enter to submit, Shift+Enter for new line. The scholar is watching, *yea.*
+        Press Enter to submit, Shift+Enter for new line. Hover responses to hear the scholar's voice, *yea.*
       </p>
     </div>
   );
