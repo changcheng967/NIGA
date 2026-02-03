@@ -54,7 +54,7 @@ export default function GrammarInterface() {
   const [loadingMessage, setLoadingMessage] = useState("");
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -65,12 +65,11 @@ export default function GrammarInterface() {
     scrollToBottom();
   }, [messages]);
 
-  // Cleanup audio on unmount
+  // Cleanup speech on unmount
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
       }
     };
   }, []);
@@ -121,10 +120,9 @@ export default function GrammarInterface() {
 
   const clearHistory = () => {
     setMessages([]);
-    // Stop any playing audio
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
+    // Stop any playing speech
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
     }
     setPlayingIndex(null);
   };
@@ -139,57 +137,61 @@ export default function GrammarInterface() {
     }
   };
 
-  const playVoice = async (text: string, index: number) => {
-    // Stop any currently playing audio
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
+  const playVoice = (text: string, index: number) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) {
+      console.error("Speech synthesis not supported");
+      return;
     }
+
+    // Stop any currently playing speech
+    window.speechSynthesis.cancel();
 
     setPlayingIndex(index);
 
-    try {
-      const response = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
+    // Clean up text for speech - remove markdown formatting
+    const cleanText = text
+      .replace(/\*\*/g, "")
+      .replace(/\*/g, "")
+      .replace(/#{1,6}\s/g, "")
+      .replace(/\n{2,}/g, ". ")
+      .replace(/\n/g, ", ");
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Voice synthesis failed");
-      }
+    const utterance = new SpeechSynthesisUtterance(cleanText);
 
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
+    // Try to find a deep male voice
+    const voices = window.speechSynthesis.getVoices();
+    const maleVoices = voices.filter(v =>
+      v.name.includes("Male") ||
+      v.name.includes("David") ||
+      v.name.includes("James") ||
+      v.name.includes("Daniel") ||
+      v.name.includes("Google UK English Male")
+    );
 
-      const audio = new Audio(audioUrl);
-      audioRef.current = audio;
-
-      audio.onended = () => {
-        setPlayingIndex(null);
-        URL.revokeObjectURL(audioUrl);
-        audioRef.current = null;
-      };
-
-      audio.onerror = () => {
-        setPlayingIndex(null);
-        URL.revokeObjectURL(audioUrl);
-        audioRef.current = null;
-      };
-
-      await audio.play();
-    } catch (error) {
-      console.error("Voice playback error:", error);
-      setPlayingIndex(null);
-      // Don't alert - just fail silently as per UX best practices
+    if (maleVoices.length > 0) {
+      utterance.voice = maleVoices[0];
     }
+
+    // Settings for a grumpy old man voice
+    utterance.pitch = 0.7;  // Lower pitch for older voice
+    utterance.rate = 0.85;  // Slower for dramatic effect
+    utterance.volume = 1;
+
+    utterance.onend = () => {
+      setPlayingIndex(null);
+    };
+
+    utterance.onerror = () => {
+      setPlayingIndex(null);
+    };
+
+    speechRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
   };
 
   const stopVoice = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
     }
     setPlayingIndex(null);
   };
@@ -323,7 +325,7 @@ export default function GrammarInterface() {
       </form>
 
       <p className="text-zinc-600 text-xs mt-3 text-center">
-        Press Enter to submit, Shift+Enter for new line. Hover responses to hear the scholar's voice, *yea.*
+        Press Enter to submit, Shift+Enter for new line. Hover responses to hear the scholar's voice (FREE, built-in), *yea.*
       </p>
     </div>
   );
