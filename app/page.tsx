@@ -6,10 +6,10 @@ export default function Home() {
       <div className="w-full max-w-2xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-7xl font-black text-white mb-2 tracking-tighter">
-            NEGAA
+            NIGA
           </h1>
           <p className="text-zinc-500 text-sm uppercase tracking-widest">
-            Native English Grammar Assistant
+            Native Interactive Grammar Assistant
           </p>
         </div>
 

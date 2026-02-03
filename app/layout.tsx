@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const inter = Inter({
@@ -8,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "NEGAA - Brutally Honest Grammar Correction",
-  description: "An ancient scholar cursed to correct your garbage grammar for eternity. Enter at your own risk.",
+  title: "NIGA - Native Interactive Grammar Assistant",
+  description: "Learn how to speak like a true savage",
 };
 
 export default function RootLayout({
@@ -18,9 +19,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${inter.variable} font-sans antialiased bg-black text-zinc-100 min-h-screen`}>
+    <html lang="en">
+      <body className={`${inter.variable} font-sans antialiased bg-black text-white`}>
         {children}
+        <Script src="https://js.puter.com/v2/" strategy="afterInteractive" />
       </body>
     </html>
   );
