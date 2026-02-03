@@ -21,7 +21,7 @@ export default function Home() {
 
           <div className="inline-block px-4 py-1 bg-zinc-900/50 border border-zinc-800 rounded-full mb-4">
             <p className="text-zinc-400 text-sm">
-              ⚔️ Cursed Scholar — Grammar Correction — Existential Suffering ⚔️
+              ⚔️ Cursed Scholar — Grammar Correction — Voice — Existential Suffering ⚔️
             </p>
           </div>
 
