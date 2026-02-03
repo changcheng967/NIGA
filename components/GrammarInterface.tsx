@@ -27,11 +27,28 @@ const LOADING_MESSAGES = [
   "Rome wasn't burned in a day, but this might take longer...",
 ];
 
+// Extract corrected text from AI response
+const extractCorrectedText = (content: string): string | null => {
+  const lines = content.split("\n");
+  let correctedText = null;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes("**Corrected version:**")) {
+      const match = lines[i].match(/\*\*Corrected version:\*\*\s*(.+)/);
+      if (match && match[1]) {
+        correctedText = match[1].trim().replace(/^["']|["']$/g, "");
+        break;
+      }
+    }
+  }
+  return correctedText;
+};
+
 export default function GrammarInterface() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -51,7 +68,6 @@ export default function GrammarInterface() {
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
 
-    // Set random loading message
     setLoadingMessage(LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]);
 
     try {
@@ -91,6 +107,16 @@ export default function GrammarInterface() {
     setMessages([]);
   };
 
+  const copyToClipboard = async (text: string, index: number) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex(null), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
+
   return (
     <div className="w-full">
       {/* Example prompts */}
@@ -104,7 +130,7 @@ export default function GrammarInterface() {
               <button
                 key={index}
                 onClick={() => handleExampleClick(example)}
-                className="text-left p-3 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 text-sm hover:border-zinc-700 hover:text-zinc-300 transition-colors"
+                className="text-left p-3 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 text-sm hover:border-zinc-700 hover:text-zinc-300 transition-all hover:shadow-lg hover:shadow-zinc-900/50"
               >
                 "{example}"
               </button>
@@ -122,7 +148,7 @@ export default function GrammarInterface() {
               className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] p-4 rounded-lg ${
+                className={`max-w-[85%] p-4 rounded-lg relative group ${
                   message.role === "user"
                     ? "bg-zinc-800 text-zinc-200"
                     : "bg-zinc-950 border border-zinc-800 text-zinc-100"
@@ -131,6 +157,23 @@ export default function GrammarInterface() {
                 <p className="text-sm leading-relaxed whitespace-pre-wrap">
                   {message.content}
                 </p>
+                {message.role === "assistant" && extractCorrectedText(message.content) && (
+                  <button
+                    onClick={() => copyToClipboard(extractCorrectedText(message.content)!, index)}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-400 text-xs"
+                    title="Copy corrected text"
+                  >
+                    {copiedIndex === index ? (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -151,7 +194,7 @@ export default function GrammarInterface() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Enter your grammatical catastrophe here..."
-          className="w-full p-4 pr-24 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 resize-none min-h-[120px] transition-colors"
+          className="w-full p-4 pr-24 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 resize-none min-h-[120px] transition-all focus:shadow-lg focus:shadow-zinc-900/50"
           disabled={isLoading}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -174,7 +217,7 @@ export default function GrammarInterface() {
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="px-6 py-2 bg-zinc-100 hover:bg-white text-black font-medium text-sm rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-2 bg-zinc-100 hover:bg-white text-black font-medium text-sm rounded-md transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? "Enduring..." : "Submit"}
           </button>
@@ -182,7 +225,7 @@ export default function GrammarInterface() {
       </form>
 
       <p className="text-zinc-600 text-xs mt-3 text-center">
-        Press Enter to submit, Shift+Enter for new line. The scholar is watching.
+        Press Enter to submit, Shift+Enter for new line. The scholar is watching, *yea.*
       </p>
     </div>
   );
