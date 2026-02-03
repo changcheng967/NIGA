@@ -98,7 +98,11 @@ export default function GrammarInterface() {
 
         setIsLoading(true);
         try {
-          const result = await window.puter.ai.speech2txt(audioBlob);
+          const result = await window.puter.ai.speech2txt({
+            file: audioBlob,
+            model: "whisper-1",
+            language: "en"
+          });
           const transcript = result.text || result;
           setInput(transcript);
         } catch (error) {
