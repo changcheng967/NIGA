@@ -5,6 +5,8 @@ import { useState, useRef, useEffect } from "react";
 declare global {
   interface Window {
     puter: any;
+    webkitSpeechRecognition: any;
+    SpeechRecognition: any;
   }
 }
 
@@ -38,9 +40,11 @@ export default function GrammarInterface() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [puterReady, setPuterReady] = useState(false);
   const [puterError, setPuterError] = useState(false);
+  const [useFallback, setUseFallback] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const speechRecognitionRef = useRef<any>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -55,16 +59,35 @@ export default function GrammarInterface() {
         setPuterReady(true);
         clearInterval(checkPuter);
       } else if (attempts > 50) {
-        // 5 seconds timeout
+        // 5 seconds timeout - switch to fallback
         clearInterval(checkPuter);
         setPuterError(true);
-        console.error("Puter.js failed to load");
+        setUseFallback(true);
+        console.error("Puter.js failed to load, using Web Speech API fallback");
       }
     }, 100);
     return () => clearInterval(checkPuter);
   }, []);
 
-  const speak = async (text: string) => {
+  // TTS using Web Speech API (fallback)
+  const speakFallback = (text: string) => {
+    if (!window.speechSynthesis) return;
+    setIsSpeaking(true);
+    const cleanText = text.replace(/\*\*/g, "").replace(/\*/g, "");
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 1.1;
+    utterance.pitch = 0.9;
+    // Try to get a male voice
+    const voices = window.speechSynthesis.getVoices();
+    const maleVoice = voices.find(v => v.name.includes('Male') || v.name.includes('David') || v.name.includes('James'));
+    if (maleVoice) utterance.voice = maleVoice;
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // TTS using Puter.js
+  const speakPuter = async (text: string) => {
     if (!window.puter?.ai) return;
     setIsSpeaking(true);
     try {
@@ -83,6 +106,8 @@ export default function GrammarInterface() {
       setIsSpeaking(false);
     }
   };
+
+  const speak = useFallback ? speakFallback : speakPuter;
 
   const processMessage = async (userMessage: string) => {
     setInput("");
@@ -113,6 +138,62 @@ export default function GrammarInterface() {
     }
   };
 
+  // Start recording using Web Speech API (fallback)
+  const startRecordingFallback = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setInput("Speech not supported in this browser");
+      setTimeout(() => setInput(""), 3000);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+
+    speechRecognitionRef.current = recognition;
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setInput(transcript);
+      if (transcript.trim()) {
+        processMessage(transcript);
+      }
+      setIsRecording(false);
+      setIsLoading(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+      if (event.error === 'not-allowed') {
+        setInput("Enable mic access you dumb shit");
+      } else if (event.error === 'no-speech') {
+        setInput("Didn't hear shit, try again");
+      } else {
+        setInput("fuck, didn't catch that");
+      }
+      setTimeout(() => setInput(""), 3000);
+      setIsRecording(false);
+      setIsLoading(false);
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+      setIsLoading(false);
+    };
+
+    recognition.start();
+  };
+
+  // Stop recording using Web Speech API (fallback)
+  const stopRecordingFallback = () => {
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      speechRecognitionRef.current = null;
+    }
+  };
+
   const toggleRecording = async (e?: React.MouseEvent | React.TouchEvent) => {
     // Prevent double-firing on touch devices
     if (e) {
@@ -121,12 +202,23 @@ export default function GrammarInterface() {
 
     if (isRecording) {
       // Stop recording
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-        setIsRecording(false);
+      if (useFallback) {
+        stopRecordingFallback();
+      } else {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
       }
+      setIsRecording(false);
     } else {
       // Start recording
+      if (useFallback) {
+        startRecordingFallback();
+        setIsRecording(true);
+        setIsLoading(true);
+        return;
+      }
+
       if (!puterReady) return;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -178,6 +270,9 @@ export default function GrammarInterface() {
   const clearChat = () => {
     setMessages([]);
     setIsSpeaking(false);
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
   };
 
   return (
@@ -215,11 +310,11 @@ export default function GrammarInterface() {
             <p className="text-zinc-500 text-sm max-w-xs">
               I'll teach you how REAL people talk. Not that textbook bullshit.
             </p>
-            {!puterReady && !puterError && (
+            {!puterReady && !puterError && !useFallback && (
               <p className="text-zinc-600 text-sm mt-4">Loading voice AI...</p>
             )}
-            {puterError && (
-              <p className="text-red-500 text-sm mt-4">Voice AI failed to load. Refresh the page.</p>
+            {(puterError || useFallback) && (
+              <p className="text-yellow-500 text-sm mt-4">Using browser voice fallback</p>
             )}
           </div>
         ) : (
@@ -296,7 +391,7 @@ export default function GrammarInterface() {
           <button
             onClick={toggleRecording}
             onTouchEnd={toggleRecording}
-            disabled={isLoading || !puterReady}
+            disabled={isLoading || (!puterReady && !useFallback)}
             className={`w-16 h-16 md:w-20 md:h-20 rounded-full flex items-center justify-center transition-all shrink-0 select-none touch-manipulation ${
               isRecording
                 ? "bg-red-500 text-white scale-105 shadow-xl shadow-red-500/50 animate-pulse"
@@ -317,7 +412,9 @@ export default function GrammarInterface() {
 
           {!input && (
             <p className="text-zinc-600 text-sm select-none">
-              {puterReady ? (isRecording ? "Tap to stop" : "Tap to record") : puterError ? "Voice AI failed" : "Loading..."}
+              {useFallback ? (isRecording ? "Tap to stop" : "Tap to record") :
+              puterReady ? (isRecording ? "Tap to stop" : "Tap to record") :
+              puterError ? "Voice AI failed" : "Loading..."}
             </p>
           )}
         </div>
