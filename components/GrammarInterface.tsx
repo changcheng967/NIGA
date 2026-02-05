@@ -17,7 +17,7 @@ export default function GrammarInterface() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isListening, setIsListening] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [puterReady, setPuterReady] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -87,45 +87,47 @@ export default function GrammarInterface() {
     }
   };
 
-  const startListening = async () => {
-    if (!puterReady) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) audioChunksRef.current.push(event.data);
-      };
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        stream.getTracks().forEach(track => track.stop());
-        setIsLoading(true);
-        try {
-          const audioFile = new File([audioBlob], "recording.webm", { type: "audio/webm" });
-          const result = await window.puter.ai.speech2txt(audioFile, {
-            model: "gpt-4o-transcribe"
-          });
-          const transcript = (result?.text || result || "").toString().trim();
-          setInput(transcript);
-          if (transcript) processMessage(transcript);
-        } catch (error: any) {
-          console.error("STT error:", error);
-          setInput("fuck, didn't catch that");
-          setIsLoading(false);
-        }
-      };
-      mediaRecorder.start();
-      setIsListening(true);
-    } catch (error) {
-      console.error("Microphone error:", error);
-    }
-  };
-
-  const stopListening = () => {
-    if (mediaRecorderRef.current && isListening) {
-      mediaRecorderRef.current.stop();
-      setIsListening(false);
+  const toggleRecording = async () => {
+    if (isRecording) {
+      // Stop recording
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+        setIsRecording(false);
+      }
+    } else {
+      // Start recording
+      if (!puterReady) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) audioChunksRef.current.push(event.data);
+        };
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+          stream.getTracks().forEach(track => track.stop());
+          setIsLoading(true);
+          try {
+            const audioFile = new File([audioBlob], "recording.webm", { type: "audio/webm" });
+            const result = await window.puter.ai.speech2txt(audioFile, {
+              model: "gpt-4o-transcribe"
+            });
+            const transcript = (result?.text || result || "").toString().trim();
+            setInput(transcript);
+            if (transcript) processMessage(transcript);
+          } catch (error: any) {
+            console.error("STT error:", error);
+            setInput("fuck, didn't catch that");
+            setIsLoading(false);
+          }
+        };
+        mediaRecorder.start();
+        setIsRecording(true);
+      } catch (error) {
+        console.error("Microphone error:", error);
+      }
     }
   };
 
@@ -135,36 +137,36 @@ export default function GrammarInterface() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-200px)] max-h-[700px]">
+    <div className="flex flex-col h-[calc(100vh-200px)] max-h-[700px] md:h-[calc(100vh-180px)]">
       {/* Header */}
       <div className="flex items-center justify-between mb-4 pb-4 border-b border-zinc-800">
         <div className="flex items-center gap-3">
-          <img src="/logo.jpg" alt="NIGA" className="w-12 h-12 rounded-lg object-contain" />
+          <img src="/logo.jpg" alt="NIGA" className="w-10 h-10 md:w-12 md:h-12 rounded-lg object-contain" />
           <div>
-            <h1 className="text-white font-bold text-lg">NIGA</h1>
-            <p className="text-zinc-500 text-xs">Native Interactive Grammar Assistant</p>
+            <h1 className="text-white font-bold text-base md:text-lg">NIGA</h1>
+            <p className="text-zinc-500 text-[10px] md:text-xs">Native Interactive Grammar Assistant</p>
           </div>
         </div>
         {messages.length > 0 && (
           <button
             onClick={clearChat}
-            className="text-zinc-500 hover:text-white text-sm transition-colors flex items-center gap-1"
+            className="text-zinc-500 hover:text-white text-sm transition-colors flex items-center gap-1 select-none"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
-            Clear
+            <span className="hidden sm:inline">Clear</span>
           </button>
         )}
       </div>
 
       {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 pr-2 mb-4">
+      <div className="flex-1 overflow-y-auto space-y-3 md:space-y-4 pr-2 mb-4">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center">
-            <img src="/logo.jpg" alt="NIGA" className="w-32 h-auto rounded-xl mb-6" />
-            <h2 className="text-white text-xl font-bold mb-2">
-              Hold the mic to speak, motherfucker
+          <div className="h-full flex flex-col items-center justify-center text-center px-4">
+            <img src="/logo.jpg" alt="NIGA" className="w-24 md:w-32 h-auto rounded-xl mb-6" />
+            <h2 className="text-white text-lg md:text-xl font-bold mb-2">
+              {isRecording ? "Listening..." : "Tap to speak, motherfucker"}
             </h2>
             <p className="text-zinc-500 text-sm max-w-xs">
               I'll teach you how REAL people talk. Not that textbook bullshit.
@@ -180,18 +182,18 @@ export default function GrammarInterface() {
                 key={i}
                 className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <div className={`flex items-start gap-2 max-w-[85%] ${
+                <div className={`flex items-start gap-2 max-w-[90%] md:max-w-[85%] ${
                   msg.role === "user" ? "flex-row-reverse" : ""
                 }`}>
                   {msg.role === "assistant" && (
-                    <img src="/logo.jpg" alt="NIGA" className="w-8 h-8 rounded-lg object-contain shrink-0 mt-1" />
+                    <img src="/logo.jpg" alt="NIGA" className="w-7 h-7 md:w-8 md:h-8 rounded-lg object-contain shrink-0 mt-1" />
                   )}
-                  <div className={`px-4 py-2.5 rounded-2xl ${
+                  <div className={`px-3 py-2 md:px-4 md:py-2.5 rounded-2xl ${
                     msg.role === "user"
                       ? "bg-blue-600 text-white rounded-br-sm"
                       : "bg-zinc-900 text-zinc-100 rounded-tl-sm border border-zinc-800"
                   }`}>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap select-none">
                       {msg.content}
                     </p>
                   </div>
@@ -200,7 +202,7 @@ export default function GrammarInterface() {
             ))}
 
             {/* Status indicators */}
-            {isLoading && !isListening && (
+            {isLoading && !isRecording && (
               <div className="flex items-center gap-2 text-zinc-500 text-sm">
                 <div className="flex gap-1">
                   <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
@@ -210,10 +212,10 @@ export default function GrammarInterface() {
                 <span>Fucking thinking...</span>
               </div>
             )}
-            {isListening && (
+            {isRecording && (
               <div className="flex items-center gap-2 text-red-400 text-sm">
-                <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
-                <span>Listening...</span>
+                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                <span>Recording... tap to stop</span>
               </div>
             )}
             {isSpeaking && !isLoading && (
@@ -237,33 +239,37 @@ export default function GrammarInterface() {
         {/* Transcript preview */}
         {input && (
           <div className="bg-yellow-400 text-black rounded-t-xl px-4 py-2 mb-0 min-h-[40px]">
-            <span className="text-sm font-medium">{input}</span>
+            <span className="text-sm font-medium select-none">{input}</span>
           </div>
         )}
 
         {/* Controls */}
         <div className={`flex items-center justify-center gap-4 ${input ? "bg-zinc-900 rounded-b-xl px-4 py-3 border border-t-0 border-zinc-800" : ""}`}>
-          {/* MIC BUTTON */}
+          {/* RECORD BUTTON - Tap to start/stop */}
           <button
-            onMouseDown={startListening}
-            onMouseUp={stopListening}
-            onTouchStart={startListening}
-            onTouchEnd={stopListening}
+            onClick={toggleRecording}
             disabled={isLoading || !puterReady}
-            className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shrink-0 ${
-              isListening
-                ? "bg-red-500 text-white scale-110 shadow-xl shadow-red-500/50"
+            className={`w-16 h-16 md:w-20 md:h-20 rounded-full flex items-center justify-center transition-all shrink-0 select-none touch-manipulation ${
+              isRecording
+                ? "bg-red-500 text-white scale-105 shadow-xl shadow-red-500/50 animate-pulse"
                 : "bg-gradient-to-br from-red-600 to-red-700 text-white shadow-lg shadow-red-500/30 hover:scale-105 active:scale-95 disabled:opacity-50"
             }`}
           >
-            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-            </svg>
+            {isRecording ? (
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-white rounded-full" />
+                <div className="w-3 h-3 bg-white rounded-full" />
+              </div>
+            ) : (
+              <svg className="w-7 h-7 md:w-8 md:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+              </svg>
+            )}
           </button>
 
           {!input && (
-            <p className="text-zinc-600 text-sm">
-              {puterReady ? "Hold mic to speak" : "Loading..."}
+            <p className="text-zinc-600 text-sm select-none">
+              {puterReady ? (isRecording ? "Tap to stop" : "Tap to record") : "Loading..."}
             </p>
           )}
         </div>

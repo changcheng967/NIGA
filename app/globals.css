@@ -2,12 +2,24 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
 }
 
 body {
   background: black;
   color: white;
   font-family: system-ui, -apple-system, sans-serif;
+  /* Prevent zoom on double tap */
+  touch-action: manipulation;
+}
+
+/* Prevent text selection on mobile */
+button, a, .select-none {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
 
 ::-webkit-scrollbar {
