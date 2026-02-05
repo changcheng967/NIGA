@@ -30,7 +30,6 @@ export default function RootLayout({
       </head>
       <body className={`${inter.variable} font-sans antialiased bg-black text-white`}>
         {children}
-        <Script src="https://js.puter.com/v2/" strategy="afterInteractive" />
       </body>
     </html>
   );
