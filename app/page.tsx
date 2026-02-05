@@ -1,20 +1,21 @@
+"use client";
+
+import { useState } from "react";
 import GrammarInterface from "@/components/GrammarInterface";
+import SplashScreen from "@/components/SplashScreen";
 
 export default function Home() {
-  return (
-    <main className="min-h-screen bg-black flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-7xl font-black text-white mb-2 tracking-tighter">
-            NIGA
-          </h1>
-          <p className="text-zinc-500 text-sm uppercase tracking-widest">
-            Native Interactive Grammar Assistant
-          </p>
-        </div>
+  const [showSplash, setShowSplash] = useState(true);
 
-        <GrammarInterface />
-      </div>
-    </main>
+  return (
+    <>
+      {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+
+      <main className="min-h-screen bg-black flex items-center justify-center p-4">
+        <div className="w-full max-w-2xl mx-auto">
+          <GrammarInterface />
+        </div>
+      </main>
+    </>
   );
 }
