@@ -47,8 +47,8 @@ export default function GrammarInterface() {
   const [puterReady, setPuterReady] = useState(false);
   const [puterError, setPuterError] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
-  const [useNvidiaTTS, setUseNvidiaTTS] = useState(true); // Use NVIDIA TTS even in fallback mode
-  const [useNvidiaSTT, setUseNvidiaSTT] = useState(true); // Try NVIDIA STT first
+  const [useNvidiaTTS, setUseNvidiaTTS] = useState(false); // Disabled - use Web Speech instead
+  const [useNvidiaSTT, setUseNvidiaSTT] = useState(false); // Disabled - Web Speech is more reliable
   const [voicesLoaded, setVoicesLoaded] = useState(false);
   const [showDebug, setShowDebug] = useState(true);
   const [debugLogs, setDebugLogs] = useState<DebugLog[]>([]);
