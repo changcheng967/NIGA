@@ -478,9 +478,9 @@ export default function GrammarInterface() {
             addLog('info', `Audio file size: ${(audioBlob.size / 1024).toFixed(1)}KB`);
             addLog('info', 'Sending to Puter STT...');
 
-            // Add timeout wrapper
+            // Add timeout wrapper - shorter 10s timeout
             const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('STT timeout after 15s')), 15000);
+              setTimeout(() => reject(new Error('STT timeout after 10s')), 10000);
             });
 
             const sttPromise = window.puter.ai.speech2txt(audioFile, {
@@ -498,10 +498,11 @@ export default function GrammarInterface() {
             addLog('error', `STT error: ${error.message || error}`);
             console.error("STT error:", error);
 
-            // If Puter fails, try switching to fallback
-            if (error.message?.includes('timeout') || error.message?.includes('network')) {
-              addLog('warning', 'Puter STT failed, suggesting fallback mode');
-              setInput("Puter fucked up, use browser voice mode");
+            // Auto-switch to fallback on timeout
+            if (error.message?.includes('timeout')) {
+              addLog('warning', 'Puter STT timed out, auto-switching to browser mode');
+              setUseFallback(true);
+              setInput("Puter's fucked, switched to browser mode. Try again!");
             } else {
               setInput("fuck, didn't catch that");
             }
