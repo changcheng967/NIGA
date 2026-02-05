@@ -47,6 +47,7 @@ export default function GrammarInterface() {
   const [puterReady, setPuterReady] = useState(false);
   const [puterError, setPuterError] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
+  const [useNvidiaTTS, setUseNvidiaTTS] = useState(true); // Use NVIDIA TTS even in fallback mode
   const [voicesLoaded, setVoicesLoaded] = useState(false);
   const [showDebug, setShowDebug] = useState(true);
   const [debugLogs, setDebugLogs] = useState<DebugLog[]>([]);
@@ -169,15 +170,69 @@ export default function GrammarInterface() {
     setIsSpeaking(false);
   }, [addLog]);
 
+  // TTS using NVIDIA NIM API
+  const speakNvidia = useCallback(async (text: string) => {
+    stopSpeech();
+    setIsSpeaking(true);
+    addLog('info', `Speaking with NVIDIA NIM: "${text.substring(0, 30)}..."`);
+
+    const cleanText = text.replace(/\*\*/g, "").replace(/\*/g, "");
+
+    try {
+      addLog('info', 'Calling /api/tts...');
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cleanText }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        addLog('error', `TTS API error: ${response.status} - ${errorText}`);
+        throw new Error(`TTS failed: ${response.status}`);
+      }
+
+      addLog('info', 'Got audio response, playing...');
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        setIsSpeaking(false);
+        addLog('success', 'Finished speaking with NVIDIA');
+      };
+
+      audio.onerror = (e: any) => {
+        URL.revokeObjectURL(audioUrl);
+        addLog('error', `Audio playback error: ${e}`);
+        setIsSpeaking(false);
+      };
+
+      await audio.play();
+    } catch (error: any) {
+      addLog('error', `NVIDIA TTS error: ${error.message}`);
+      setIsSpeaking(false);
+    }
+  }, [stopSpeech, addLog]);
+
   // TTS using Web Speech API (fallback) - enhanced with personality
-  const speakFallback = useCallback((text: string) => {
+  const speakFallback = useCallback(async (text: string) => {
+    // Try NVIDIA NIM first, fall back to browser TTS
+    if (useNvidiaTTS) {
+      addLog('info', 'Using NVIDIA NIM TTS for fallback mode');
+      await speakNvidia(text);
+      return;
+    }
+
     if (!window.speechSynthesis) {
       addLog('error', 'speechSynthesis not available for TTS');
       return;
     }
     stopSpeech();
     setIsSpeaking(true);
-    addLog('info', `Speaking with fallback: "${text.substring(0, 30)}..."`);
+    addLog('info', `Speaking with browser fallback: "${text.substring(0, 30)}..."`);
 
     // Clean text but keep some personality markers
     let cleanText = text.replace(/\*\*/g, "").replace(/\*/g, "");
@@ -240,7 +295,7 @@ export default function GrammarInterface() {
     };
 
     speakNextSentence();
-  }, [stopSpeech, addLog]);
+  }, [useNvidiaTTS, speakNvidia, stopSpeech, addLog]);
 
   // TTS using Puter.js
   const speakPuter = useCallback(async (text: string) => {
@@ -646,10 +701,10 @@ export default function GrammarInterface() {
               Voices: {voicesLoaded ? "✓" : "✗"}
             </span>
             <span className={useFallback ? "text-yellow-400" : "text-zinc-600"}>
-              Mode: {useFallback ? "Fallback" : "Puter"}
+              STT: {useFallback ? "Browser" : "Puter"}
             </span>
-            <span className={selectedVoiceRef.current ? "text-green-400" : "text-zinc-600"}>
-              STT: {selectedVoiceRef.current ? "✓" : "✗"}
+            <span className={useNvidiaTTS ? "text-purple-400" : "text-zinc-600"}>
+              TTS: {useNvidiaTTS ? "NVIDIA" : useFallback ? "Browser" : "Puter"}
             </span>
           </div>
         </div>
