@@ -86,55 +86,43 @@ export default function GrammarInterface() {
       return;
     }
 
-    stopSpeech();
+    // Cancel any current speech
+    window.speechSynthesis.cancel();
+
+    // Small delay to ensure cancel is processed
+    await new Promise(r => setTimeout(r, 50));
+
     setIsSpeaking(true);
 
     let cleanText = text.replace(/\*\*/g, "").replace(/\*/g, "");
-    const sentences = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
-    let sentenceIndex = 0;
 
-    const speakNextSentence = () => {
-      if (sentenceIndex >= sentences.length) {
-        setIsSpeaking(false);
-        return;
-      }
+    const utterance = new SpeechSynthesisUtterance(cleanText);
 
-      const sentence = sentences[sentenceIndex].trim();
-      if (!sentence) {
-        sentenceIndex++;
-        speakNextSentence();
-        return;
-      }
+    // Voice settings for bitter old scholar
+    utterance.rate = 0.85;
+    utterance.pitch = 0.7;
+    utterance.volume = 1.0;
 
-      const utterance = new SpeechSynthesisUtterance(sentence);
+    if (selectedVoiceRef.current) {
+      utterance.voice = selectedVoiceRef.current;
+    }
 
-      // Voice settings for bitter old scholar
-      utterance.rate = 0.85;       // Even slower for weary effect
-      utterance.pitch = 0.7;       // Lower pitch for male voice
-      utterance.volume = 1.0;
-
-      if (selectedVoiceRef.current) {
-        utterance.voice = selectedVoiceRef.current;
-      }
-
-      utterance.onend = () => {
-        sentenceIndex++;
-        if (sentenceIndex < sentences.length) {
-          setTimeout(speakNextSentence, 250);
-        } else {
-          setIsSpeaking(false);
-        }
-      };
-
-      utterance.onerror = () => {
-        setIsSpeaking(false);
-      };
-
-      window.speechSynthesis.speak(utterance);
+    utterance.onstart = () => {
+      console.log('Speech started');
     };
 
-    speakNextSentence();
-  }, [stopSpeech]);
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      console.log('Speech ended');
+    };
+
+    utterance.onerror = (e) => {
+      console.error('Speech error:', e);
+      setIsSpeaking(false);
+    };
+
+    window.speechSynthesis.speak(utterance);
+  }, []);
 
   const processMessage = async (userMessage: string) => {
     setInput("");
@@ -289,6 +277,12 @@ export default function GrammarInterface() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => speak("Fuck you, test complete, yea")}
+            className="text-zinc-500 hover:text-green-400 text-xs transition-colors select-none touch-manipulation px-2 py-1"
+          >
+            🔊 Test Voice
+          </button>
           {messages.length > 0 && (
             <button
               onClick={(e) => { e.preventDefault(); clearChat(); }}
