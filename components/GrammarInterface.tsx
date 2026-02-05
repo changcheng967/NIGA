@@ -48,6 +48,7 @@ export default function GrammarInterface() {
   const [puterError, setPuterError] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
   const [useNvidiaTTS, setUseNvidiaTTS] = useState(true); // Use NVIDIA TTS even in fallback mode
+  const [useNvidiaSTT, setUseNvidiaSTT] = useState(true); // Try NVIDIA STT first
   const [voicesLoaded, setVoicesLoaded] = useState(false);
   const [showDebug, setShowDebug] = useState(true);
   const [debugLogs, setDebugLogs] = useState<DebugLog[]>([]);
@@ -566,41 +567,78 @@ export default function GrammarInterface() {
           stream.getTracks().forEach(track => track.stop());
           setIsLoading(true);
 
-          try {
-            const audioFile = new File([audioBlob], "recording." + (mimeType?.split(';')[0]?.split('/')[1] || 'webm'), { type: mimeType || 'audio/webm' });
-            addLog('info', `Audio file size: ${(audioBlob.size / 1024).toFixed(1)}KB`);
-            addLog('info', 'Sending to Puter STT...');
+          // Convert blob to base64
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const base64Audio = (reader.result as string).split(',')[1];
 
-            // Add timeout wrapper - shorter 10s timeout
-            const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('STT timeout after 10s')), 10000);
-            });
+            try {
+              addLog('info', `Audio file size: ${(audioBlob.size / 1024).toFixed(1)}KB`);
 
-            const sttPromise = window.puter.ai.speech2txt(audioFile, {
-              model: "gpt-4o-transcribe"
-            });
+              if (useNvidiaSTT) {
+                addLog('info', 'Sending to NVIDIA NIM STT...');
 
-            const result = await Promise.race([sttPromise, timeoutPromise]) as any;
-            addLog('info', `STT response type: ${typeof result}, has text: ${!!result?.text}`);
+                const timeoutPromise = new Promise((_, reject) => {
+                  setTimeout(() => reject(new Error('STT timeout after 15s')), 15000);
+                });
 
-            const transcript = (result?.text || result || "").toString().trim();
-            addLog('success', `Got transcript: "${transcript}"`);
-            setInput(transcript);
-            if (transcript) processMessage(transcript);
-          } catch (error: any) {
-            addLog('error', `STT error: ${error.message || error}`);
-            console.error("STT error:", error);
+                const sttPromise = fetch('/api/asr', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ audio: base64Audio }),
+                });
 
-            // Auto-switch to fallback on timeout
-            if (error.message?.includes('timeout')) {
-              addLog('warning', 'Puter STT timed out, auto-switching to browser mode');
-              setUseFallback(true);
-              setInput("Puter's fucked, switched to browser mode. Try again!");
-            } else {
-              setInput("fuck, didn't catch that");
+                const response = await Promise.race([sttPromise, timeoutPromise]) as any;
+                addLog('info', `STT response status: ${response.status}`);
+
+                if (response.ok) {
+                  const data = await response.json();
+                  const transcript = data.text?.toString().trim() || '';
+                  addLog('success', `Got transcript: "${transcript}"`);
+                  setInput(transcript);
+                  if (transcript) processMessage(transcript);
+                } else {
+                  const errorText = await response.text();
+                  addLog('error', `NVIDIA STT error: ${response.status} - ${errorText}`);
+                  throw new Error('NVIDIA STT failed');
+                }
+              } else {
+                addLog('info', 'Sending to Puter STT...');
+                const audioFile = new File([audioBlob], "recording." + (mimeType?.split(';')[0]?.split('/')[1] || 'webm'), { type: mimeType || 'audio/webm' });
+
+                const timeoutPromise = new Promise((_, reject) => {
+                  setTimeout(() => reject(new Error('STT timeout after 10s')), 10000);
+                });
+
+                const sttPromise = window.puter.ai.speech2txt(audioFile, {
+                  model: "gpt-4o-transcribe"
+                });
+
+                const result = await Promise.race([sttPromise, timeoutPromise]) as any;
+                addLog('info', `STT response type: ${typeof result}, has text: ${!!result?.text}`);
+
+                const transcript = (result?.text || result || "").toString().trim();
+                addLog('success', `Got transcript: "${transcript}"`);
+                setInput(transcript);
+                if (transcript) processMessage(transcript);
+              }
+            } catch (error: any) {
+              addLog('error', `STT error: ${error.message || error}`);
+              console.error("STT error:", error);
+
+              // Auto-switch to browser STT on timeout/failure
+              if (useNvidiaSTT) {
+                addLog('warning', 'NVIDIA STT failed, switching to browser STT');
+                setUseNvidiaSTT(false);
+                setInput("NVIDIA STT failed, switched to browser mode. Try again!");
+              } else {
+                setInput("fuck, didn't catch that");
+              }
+              setIsLoading(false);
             }
-            setIsLoading(false);
-          }
+          };
+
+          reader.readAsDataURL(audioBlob);
         };
 
         mediaRecorder.start();
@@ -693,18 +731,15 @@ export default function GrammarInterface() {
               ))
             )}
           </div>
-          <div className="px-3 py-1 border-t border-zinc-800 flex gap-3 text-[10px] shrink-0">
-            <span className={puterReady ? "text-green-400" : "text-zinc-600"}>
-              Puter.js: {puterReady ? "✓" : "✗"}
-            </span>
-            <span className={voicesLoaded ? "text-green-400" : "text-zinc-600"}>
-              Voices: {voicesLoaded ? "✓" : "✗"}
-            </span>
-            <span className={useFallback ? "text-yellow-400" : "text-zinc-600"}>
-              STT: {useFallback ? "Browser" : "Puter"}
+          <div className="px-3 py-1 border-t border-zinc-800 flex gap-3 text-[10px] shrink-0 flex-wrap">
+            <span className={useNvidiaSTT ? "text-purple-400" : useFallback ? "text-yellow-400" : "text-zinc-600"}>
+              STT: {useNvidiaSTT ? "NVIDIA" : useFallback ? "Browser" : "Puter"}
             </span>
             <span className={useNvidiaTTS ? "text-purple-400" : "text-zinc-600"}>
-              TTS: {useNvidiaTTS ? "NVIDIA" : useFallback ? "Browser" : "Puter"}
+              TTS: {useNvidiaTTS ? "NVIDIA" : "Puter"}
+            </span>
+            <span className={puterReady ? "text-green-400" : "text-zinc-600"}>
+              Puter.js: {puterReady ? "✓" : "✗"}
             </span>
           </div>
         </div>
@@ -751,6 +786,16 @@ export default function GrammarInterface() {
               {useFallback ? "Use Premium" : "Use Browser"}
             </button>
           )}
+          <button
+            onClick={() => {
+              setUseNvidiaSTT(!useNvidiaSTT);
+              addLog('info', `Switched STT to ${!useNvidiaSTT ? 'NVIDIA' : 'Browser'}`);
+            }}
+            className="text-zinc-500 hover:text-white text-xs px-2 py-1 rounded hover:bg-zinc-800 select-none"
+            title="Switch STT mode"
+          >
+            {useNvidiaSTT ? "STT: NVIDIA" : "STT: Browser"}
+          </button>
           {messages.length > 0 && (
             <button
               onClick={(e) => { e.preventDefault(); clearChat(); }}
