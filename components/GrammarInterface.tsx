@@ -326,6 +326,8 @@ export default function GrammarInterface() {
       return;
     }
 
+    addLog('info', `Using ${window.SpeechRecognition ? 'SpeechRecognition' : 'webkitSpeechRecognition'}`);
+
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = false;
@@ -333,22 +335,55 @@ export default function GrammarInterface() {
     recognition.maxAlternatives = 1;
 
     speechRecognitionRef.current = recognition;
-    addLog('info', `Recognition config: lang=${recognition.lang}`);
+    addLog('info', `Recognition config: lang=${recognition.lang}, continuous=${recognition.continuous}`);
+
+    // Check if we have audio permission
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(() => {
+        addLog('success', 'Mic permission granted for Web Speech');
+      })
+      .catch((e) => {
+        addLog('error', `Mic permission failed: ${e.name}`);
+      });
+
+    recognition.onaudiostart = () => {
+      addLog('success', 'Audio capture started - speak into your mic!');
+    };
+
+    recognition.onaudioend = () => {
+      addLog('info', 'Audio capture ended');
+    };
+
+    recognition.onspeechstart = () => {
+      addLog('success', 'Speech detected!');
+    };
+
+    recognition.onspeechend = () => {
+      addLog('info', 'Speech ended, processing...');
+    };
 
     recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      const confidence = event.results[0][0].confidence;
+      addLog('info', `Got result, event.results.length: ${event.results?.length}`);
 
-      addLog('info', `Got transcript: "${transcript}" (confidence: ${(confidence * 100).toFixed(0)}%)`);
-      setInput(transcript);
+      if (event.results && event.results.length > 0) {
+        const transcript = event.results[0][0].transcript;
+        const confidence = event.results[0][0].confidence;
 
-      // Only process if we're reasonably confident
-      if (transcript.trim() && confidence > 0.5) {
-        processMessage(transcript);
-      } else if (confidence <= 0.5) {
-        addLog('warning', 'Low confidence, not processing');
-        setInput("Didn't quite catch that, speak the fuck up");
-        setTimeout(() => setInput(""), 2500);
+        addLog('info', `Got transcript: "${transcript}" (confidence: ${(confidence * 100).toFixed(0)}%)`);
+        setInput(transcript);
+
+        // Only process if we're reasonably confident
+        if (transcript.trim() && confidence > 0.5) {
+          processMessage(transcript);
+        } else if (confidence <= 0.5) {
+          addLog('warning', 'Low confidence, not processing');
+          setInput("Didn't quite catch that, speak the fuck up");
+          setTimeout(() => setInput(""), 2500);
+        }
+      } else {
+        addLog('error', 'No results in event!');
+        setInput("Didn't catch shit, try again");
+        setTimeout(() => setInput(""), 2000);
       }
       setIsRecording(false);
       setIsLoading(false);
@@ -362,10 +397,11 @@ export default function GrammarInterface() {
       switch (event.error) {
         case 'not-allowed':
           errorMsg = "Enable mic access you dumb shit";
+          addLog('error', 'Mic permission denied');
           break;
         case 'no-speech':
           errorMsg = "Didn't hear shit, try again";
-          addLog('warning', 'No speech detected');
+          addLog('warning', 'No speech detected - did you speak?');
           break;
         case 'network':
           errorMsg = "Network fucked, try again";
@@ -388,14 +424,13 @@ export default function GrammarInterface() {
 
     recognition.onend = () => {
       addLog('info', 'Recognition ended');
-      if (isRecording) {
-        setIsRecording(false);
-        setIsLoading(false);
-      }
+      setIsRecording(false);
+      setIsLoading(false);
     };
 
     try {
       recognition.start();
+      addLog('info', 'Called recognition.start()');
     } catch (e: any) {
       addLog('error', `Failed to start recognition: ${e}`);
       console.error("Failed to start recognition:", e);
