@@ -1,53 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const NVIDIA_NIM_API_KEY = process.env.NVIDIA_NIM_API_KEY;
+const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
 const NVIDIA_NIM_BASE_URL = process.env.NVIDIA_NIM_BASE_URL || "https://integrate.api.nvidia.com/v1";
 
 export const runtime = "edge";
 
-interface ASRRequest {
-  audio: string; // base64 encoded audio
-}
-
-// Speech-to-Text using NVIDIA NIM (OpenAI-compatible format)
+// Speech-to-Text using NVIDIA NIM
 export async function POST(req: NextRequest) {
   try {
-    const { audio }: ASRRequest = await req.json();
+    const formData = await req.formData();
+    const file = formData.get('file') as File;
 
-    if (!audio?.trim()) {
-      return NextResponse.json({ error: "No audio provided" }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    if (!NVIDIA_NIM_API_KEY) {
+    if (!NVIDIA_API_KEY) {
       return NextResponse.json({ error: "No API key" }, { status: 500 });
     }
 
-    // Convert base64 to blob
-    const audioBytes = Uint8Array.from(atob(audio), c => c.charCodeAt(0));
-    const audioBlob = new Blob([audioBytes], { type: 'audio/webm' });
-
-    // Call NVIDIA NIM STT using OpenAI-compatible format
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'recording.webm');
-    formData.append('model', 'openai/whisper-large-v3');
-    formData.append('language', 'en');
+    // Prepare the payload for NVIDIA
+    const nvidiaFormData = new FormData();
+    nvidiaFormData.append('file', file);
+    nvidiaFormData.append('model', 'nvidia/parakeet-ctc-1.1b-all');
+    nvidiaFormData.append('language', 'en');
+    nvidiaFormData.append('response_format', 'json');
 
     const response = await fetch(`${NVIDIA_NIM_BASE_URL}/audio/transcriptions`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${NVIDIA_NIM_API_KEY}`,
+        Authorization: `Bearer ${NVIDIA_API_KEY}`,
       },
-      body: formData,
+      body: nvidiaFormData,
     });
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error("NVIDIA ASR error:", errorText);
-      return NextResponse.json({ error: "ASR failed" }, { status: 500 });
+      return NextResponse.json({ error: errorText || "ASR failed" }, { status: response.status });
     }
 
-    const result = await response.json();
-    return NextResponse.json({ text: result.text });
+    const data = await response.json();
+    return NextResponse.json({ text: data.text });
   } catch (error) {
     console.error("ASR error:", error);
     return NextResponse.json({ error: "ASR failed" }, { status: 500 });

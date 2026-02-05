@@ -567,78 +567,73 @@ export default function GrammarInterface() {
           stream.getTracks().forEach(track => track.stop());
           setIsLoading(true);
 
-          // Convert blob to base64
-          const reader = new FileReader();
-          reader.onloadend = async () => {
-            const base64Audio = (reader.result as string).split(',')[1];
+          try {
+            addLog('info', `Audio file size: ${(audioBlob.size / 1024).toFixed(1)}KB`);
 
-            try {
-              addLog('info', `Audio file size: ${(audioBlob.size / 1024).toFixed(1)}KB`);
+            if (useNvidiaSTT) {
+              addLog('info', 'Sending to NVIDIA NIM STT...');
 
-              if (useNvidiaSTT) {
-                addLog('info', 'Sending to NVIDIA NIM STT...');
+              const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('STT timeout after 15s')), 15000);
+              });
 
-                const timeoutPromise = new Promise((_, reject) => {
-                  setTimeout(() => reject(new Error('STT timeout after 15s')), 15000);
-                });
+              // Send as FormData with file
+              const formData = new FormData();
+              formData.append('file', audioBlob, 'recording.webm');
 
-                const sttPromise = fetch('/api/asr', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ audio: base64Audio }),
-                });
+              const sttPromise = fetch('/api/asr', {
+                method: 'POST',
+                body: formData,
+              });
 
-                const response = await Promise.race([sttPromise, timeoutPromise]) as any;
-                addLog('info', `STT response status: ${response.status}`);
+              const response = await Promise.race([sttPromise, timeoutPromise]) as any;
+              addLog('info', `STT response status: ${response.status}`);
 
-                if (response.ok) {
-                  const data = await response.json();
-                  const transcript = data.text?.toString().trim() || '';
-                  addLog('success', `Got transcript: "${transcript}"`);
-                  setInput(transcript);
-                  if (transcript) processMessage(transcript);
-                } else {
-                  const errorText = await response.text();
-                  addLog('error', `NVIDIA STT error: ${response.status} - ${errorText}`);
-                  throw new Error('NVIDIA STT failed');
-                }
-              } else {
-                addLog('info', 'Sending to Puter STT...');
-                const audioFile = new File([audioBlob], "recording." + (mimeType?.split(';')[0]?.split('/')[1] || 'webm'), { type: mimeType || 'audio/webm' });
-
-                const timeoutPromise = new Promise((_, reject) => {
-                  setTimeout(() => reject(new Error('STT timeout after 10s')), 10000);
-                });
-
-                const sttPromise = window.puter.ai.speech2txt(audioFile, {
-                  model: "gpt-4o-transcribe"
-                });
-
-                const result = await Promise.race([sttPromise, timeoutPromise]) as any;
-                addLog('info', `STT response type: ${typeof result}, has text: ${!!result?.text}`);
-
-                const transcript = (result?.text || result || "").toString().trim();
+              if (response.ok) {
+                const data = await response.json();
+                const transcript = data.text?.toString().trim() || '';
                 addLog('success', `Got transcript: "${transcript}"`);
                 setInput(transcript);
                 if (transcript) processMessage(transcript);
-              }
-            } catch (error: any) {
-              addLog('error', `STT error: ${error.message || error}`);
-              console.error("STT error:", error);
-
-              // Auto-switch to browser STT on timeout/failure
-              if (useNvidiaSTT) {
-                addLog('warning', 'NVIDIA STT failed, switching to browser STT');
-                setUseNvidiaSTT(false);
-                setInput("NVIDIA STT failed, switched to browser mode. Try again!");
               } else {
-                setInput("fuck, didn't catch that");
+                const errorText = await response.text();
+                addLog('error', `NVIDIA STT error: ${response.status} - ${errorText}`);
+                throw new Error('NVIDIA STT failed');
               }
-              setIsLoading(false);
-            }
-          };
+            } else {
+              addLog('info', 'Sending to Puter STT...');
+              const audioFile = new File([audioBlob], "recording." + (mimeType?.split(';')[0]?.split('/')[1] || 'webm'), { type: mimeType || 'audio/webm' });
 
-          reader.readAsDataURL(audioBlob);
+              const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('STT timeout after 10s')), 10000);
+              });
+
+              const sttPromise = window.puter.ai.speech2txt(audioFile, {
+                model: "gpt-4o-transcribe"
+              });
+
+              const result = await Promise.race([sttPromise, timeoutPromise]) as any;
+              addLog('info', `STT response type: ${typeof result}, has text: ${!!result?.text}`);
+
+              const transcript = (result?.text || result || "").toString().trim();
+              addLog('success', `Got transcript: "${transcript}"`);
+              setInput(transcript);
+              if (transcript) processMessage(transcript);
+            }
+          } catch (error: any) {
+            addLog('error', `STT error: ${error.message || error}`);
+            console.error("STT error:", error);
+
+            // Auto-switch to browser STT on timeout/failure
+            if (useNvidiaSTT) {
+              addLog('warning', 'NVIDIA STT failed, switching to browser STT');
+              setUseNvidiaSTT(false);
+              setInput("NVIDIA STT failed, switched to browser mode. Try again!");
+            } else {
+              setInput("fuck, didn't catch that");
+            }
+            setIsLoading(false);
+          }
         };
 
         mediaRecorder.start();
