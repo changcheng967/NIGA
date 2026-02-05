@@ -329,7 +329,7 @@ export default function GrammarInterface() {
     addLog('info', `Using ${window.SpeechRecognition ? 'SpeechRecognition' : 'webkitSpeechRecognition'}`);
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
+    recognition.continuous = false;  // Auto-stop after speech ends
     recognition.interimResults = false;
     recognition.lang = "en-US";
     recognition.maxAlternatives = 1;
@@ -356,10 +356,12 @@ export default function GrammarInterface() {
 
     recognition.onspeechstart = () => {
       addLog('success', 'Speech detected!');
+      setInput("🎤 Listening...");
     };
 
     recognition.onspeechend = () => {
       addLog('info', 'Speech ended, processing...');
+      setInput("Processing...");
     };
 
     recognition.onresult = (event: any) => {
@@ -407,7 +409,7 @@ export default function GrammarInterface() {
           errorMsg = "Network fucked, try again";
           break;
         case 'aborted':
-          // User stopped recording, don't show error
+          // User stopped recording - ignore
           addLog('info', 'Recognition aborted');
           return;
       }
@@ -420,6 +422,7 @@ export default function GrammarInterface() {
 
     recognition.onstart = () => {
       addLog('success', 'Recognition started - speak now!');
+      setInput("🎤 Speak now! (auto-stops when you finish)");
     };
 
     recognition.onend = () => {
