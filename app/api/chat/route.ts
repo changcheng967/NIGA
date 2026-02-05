@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const NVIDIA_NIM_API_KEY = process.env.NVIDIA_NIM_API_KEY;
+const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
 const NVIDIA_NIM_BASE_URL = process.env.NVIDIA_NIM_BASE_URL || "https://integrate.api.nvidia.com/v1";
 
 export const runtime = "edge";
@@ -73,9 +73,9 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (!NVIDIA_NIM_API_KEY) {
+    if (!NVIDIA_API_KEY) {
       return NextResponse.json({
-        response: "No fucking API key. Add NVIDIA_NIM_API_KEY to .env, yea"
+        response: "No fucking API key. Add NVIDIA_API_KEY to .env, yea"
       });
     }
 
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${NVIDIA_NIM_API_KEY}`,
+        Authorization: `Bearer ${NVIDIA_API_KEY}`,
       },
       body: JSON.stringify({
         model: "meta/llama-3.1-70b-instruct",

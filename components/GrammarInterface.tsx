@@ -14,12 +14,6 @@ interface Message {
   content: string;
 }
 
-interface DebugLog {
-  time: string;
-  type: 'info' | 'success' | 'error' | 'warning';
-  message: string;
-}
-
 export default function GrammarInterface() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -27,17 +21,9 @@ export default function GrammarInterface() {
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voicesLoaded, setVoicesLoaded] = useState(false);
-  const [showDebug, setShowDebug] = useState(true);
-  const [debugLogs, setDebugLogs] = useState<DebugLog[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const speechRecognitionRef = useRef<any>(null);
   const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
-
-  const addLog = useCallback((type: DebugLog['type'], message: string) => {
-    const time = new Date().toLocaleTimeString();
-    setDebugLogs(prev => [...prev.slice(-49), { time, type, message }]);
-    console.log(`[${type.toUpperCase()}]`, message);
-  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -45,14 +31,9 @@ export default function GrammarInterface() {
 
   // Preload Web Speech API voices
   useEffect(() => {
-    addLog('info', 'Initializing Web Speech API...');
-
     if ('speechSynthesis' in window) {
-      addLog('success', 'speechSynthesis API available');
-
       const loadVoices = () => {
         const voices = window.speechSynthesis.getVoices();
-        addLog('info', `Found ${voices.length} voices`);
 
         if (voices.length > 0) {
           // Prefer deeper male voices for bitter old scholar vibe
@@ -69,7 +50,6 @@ export default function GrammarInterface() {
             const voice = voices.find(v => v.name.includes(name));
             if (voice) {
               selectedVoiceRef.current = voice;
-              addLog('success', `Selected voice: ${voice.name}`);
               break;
             }
           }
@@ -78,7 +58,6 @@ export default function GrammarInterface() {
             const englishVoice = voices.find(v => v.lang.startsWith('en'));
             if (englishVoice) {
               selectedVoiceRef.current = englishVoice;
-              addLog('warning', `Using fallback voice: ${englishVoice.name}`);
             }
           }
           setVoicesLoaded(true);
@@ -90,38 +69,25 @@ export default function GrammarInterface() {
       } else {
         loadVoices();
       }
-    } else {
-      addLog('error', 'speechSynthesis API NOT available');
     }
-
-    // Check SpeechRecognition
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      addLog('success', 'SpeechRecognition API available');
-    } else {
-      addLog('error', 'SpeechRecognition API NOT available');
-    }
-  }, [addLog]);
+  }, []);
 
   // Stop any ongoing speech
   const stopSpeech = useCallback(() => {
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
-      addLog('info', 'Speech stopped');
     }
     setIsSpeaking(false);
-  }, [addLog]);
+  }, []);
 
   // TTS using Web Speech API
   const speak = useCallback(async (text: string) => {
     if (!window.speechSynthesis) {
-      addLog('error', 'speechSynthesis not available');
       return;
     }
 
     stopSpeech();
     setIsSpeaking(true);
-    addLog('info', `Speaking: "${text.substring(0, 30)}..."`);
 
     let cleanText = text.replace(/\*\*/g, "").replace(/\*/g, "");
     const sentences = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
@@ -130,7 +96,6 @@ export default function GrammarInterface() {
     const speakNextSentence = () => {
       if (sentenceIndex >= sentences.length) {
         setIsSpeaking(false);
-        addLog('success', 'Finished speaking');
         return;
       }
 
@@ -144,8 +109,8 @@ export default function GrammarInterface() {
       const utterance = new SpeechSynthesisUtterance(sentence);
 
       // Voice settings for bitter old scholar
-      utterance.rate = 0.9;        // Slower for weary effect
-      utterance.pitch = 0.75;      // Lower pitch for male voice
+      utterance.rate = 0.85;       // Even slower for weary effect
+      utterance.pitch = 0.7;       // Lower pitch for male voice
       utterance.volume = 1.0;
 
       if (selectedVoiceRef.current) {
@@ -155,15 +120,13 @@ export default function GrammarInterface() {
       utterance.onend = () => {
         sentenceIndex++;
         if (sentenceIndex < sentences.length) {
-          setTimeout(speakNextSentence, 200);
+          setTimeout(speakNextSentence, 250);
         } else {
           setIsSpeaking(false);
-          addLog('success', 'Finished speaking');
         }
       };
 
-      utterance.onerror = (e) => {
-        addLog('error', `Speech error: ${e}`);
+      utterance.onerror = () => {
         setIsSpeaking(false);
       };
 
@@ -171,7 +134,7 @@ export default function GrammarInterface() {
     };
 
     speakNextSentence();
-  }, [stopSpeech, addLog]);
+  }, [stopSpeech]);
 
   const processMessage = async (userMessage: string) => {
     setInput("");
@@ -179,7 +142,6 @@ export default function GrammarInterface() {
     const newUserMessage: Message = { role: "user", content: userMessage };
     setMessages((prev) => [...prev, newUserMessage]);
     setIsLoading(true);
-    addLog('info', `Processing: "${userMessage}"`);
 
     try {
       const response = await fetch("/api/chat", {
@@ -194,10 +156,8 @@ export default function GrammarInterface() {
       const data = await response.json();
       const aiResponse = data.response;
       setMessages((prev) => [...prev, { role: "assistant", content: aiResponse }]);
-      addLog('success', `Got response: "${aiResponse.substring(0, 30)}..."`);
       speak(aiResponse);
     } catch (error: any) {
-      addLog('error', `Chat error: ${error.message}`);
       const errorMsg = "What the fuck happened. Try again, yea";
       setMessages((prev) => [...prev, { role: "assistant", content: errorMsg }]);
       speak(errorMsg);
@@ -208,11 +168,8 @@ export default function GrammarInterface() {
 
   // Start recording using Web Speech API
   const startRecording = () => {
-    addLog('info', 'Starting Web Speech Recognition...');
-
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      addLog('error', 'SpeechRecognition not supported!');
       setInput("Speech not supported in this browser, fuck");
       setTimeout(() => setInput(""), 3000);
       return;
@@ -226,17 +183,15 @@ export default function GrammarInterface() {
 
     speechRecognitionRef.current = recognition;
 
-    recognition.onaudiostart = () => {
-      addLog('success', 'Audio capture started - speak!');
+    recognition.onstart = () => {
+      setInput("🎤 Speak now!");
     };
 
     recognition.onspeechstart = () => {
-      addLog('success', 'Speech detected!');
       setInput("🎤 Listening...");
     };
 
     recognition.onspeechend = () => {
-      addLog('info', 'Speech ended, processing...');
       setInput("Processing...");
     };
 
@@ -245,18 +200,15 @@ export default function GrammarInterface() {
         const transcript = event.results[0][0].transcript;
         const confidence = event.results[0][0].confidence;
 
-        addLog('info', `Got transcript: "${transcript}" (${(confidence * 100).toFixed(0)}%)`);
         setInput(transcript);
 
         if (transcript.trim() && confidence > 0.5) {
           processMessage(transcript);
         } else if (confidence <= 0.5) {
-          addLog('warning', 'Low confidence, not processing');
           setInput("Didn't quite catch that, speak the fuck up");
           setTimeout(() => setInput(""), 2500);
         }
       } else {
-        addLog('error', 'No results!');
         setInput("Didn't catch shit, try again");
         setTimeout(() => setInput(""), 2000);
       }
@@ -265,20 +217,16 @@ export default function GrammarInterface() {
     };
 
     recognition.onerror = (event: any) => {
-      addLog('error', `Recognition error: ${event.error}`);
       let errorMsg = "fuck, didn't catch that";
 
       switch (event.error) {
         case 'not-allowed':
           errorMsg = "Enable mic access you dumb shit";
-          addLog('error', 'Mic permission denied');
           break;
         case 'no-speech':
           errorMsg = "Didn't hear shit, try again";
-          addLog('warning', 'No speech detected');
           break;
         case 'aborted':
-          addLog('info', 'Recognition aborted');
           return;
       }
 
@@ -288,13 +236,7 @@ export default function GrammarInterface() {
       setIsLoading(false);
     };
 
-    recognition.onstart = () => {
-      addLog('success', 'Recognition started - speak now!');
-      setInput("🎤 Speak now!");
-    };
-
     recognition.onend = () => {
-      addLog('info', 'Recognition ended');
       setIsRecording(false);
       setIsLoading(false);
     };
@@ -302,7 +244,6 @@ export default function GrammarInterface() {
     try {
       recognition.start();
     } catch (e: any) {
-      addLog('error', `Failed to start: ${e}`);
       setInput("Mic fucked, try again");
       setTimeout(() => setInput(""), 2000);
     }
@@ -334,78 +275,10 @@ export default function GrammarInterface() {
   const clearChat = () => {
     setMessages([]);
     stopSpeech();
-    addLog('info', 'Chat cleared');
-  };
-
-  const getLogColor = (type: DebugLog['type']) => {
-    switch (type) {
-      case 'success': return 'text-green-400';
-      case 'error': return 'text-red-400';
-      case 'warning': return 'text-yellow-400';
-      default: return 'text-zinc-400';
-    }
-  };
-
-  const copyLogs = () => {
-    const logText = debugLogs.map(log =>
-      `[${log.time}] [${log.type.toUpperCase()}] ${log.message}`
-    ).join('\n');
-    navigator.clipboard.writeText(logText);
-    addLog('success', 'Logs copied!');
   };
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-180px)] max-h-[700px] md:h-[calc(100dvh-160px)] relative">
-      {/* Debug Panel */}
-      {showDebug && (
-        <div className="absolute top-0 left-0 right-0 z-50 bg-black/95 border-b border-zinc-800 max-h-[200px] overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800 shrink-0">
-            <span className="text-xs font-bold text-white flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-              DEBUG CONSOLE
-            </span>
-            <div className="flex items-center gap-2">
-              <button onClick={copyLogs} className="text-zinc-500 hover:text-white text-xs flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                Copy
-              </button>
-              <button onClick={() => setShowDebug(false)} className="text-zinc-500 hover:text-white text-xs">
-                ✕ Close
-              </button>
-            </div>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] leading-tight">
-            {debugLogs.length === 0 ? (
-              <p className="text-zinc-600">Waiting for events...</p>
-            ) : (
-              debugLogs.map((log, i) => (
-                <div key={i} className={`flex gap-2 ${getLogColor(log.type)}`}>
-                  <span className="text-zinc-600 shrink-0">[{log.time}]</span>
-                  <span className={getLogColor(log.type)}>[{log.type.toUpperCase()}]</span>
-                  <span className="text-zinc-300">{log.message}</span>
-                </div>
-              ))
-            )}
-          </div>
-          <div className="px-3 py-1 border-t border-zinc-800 flex gap-3 text-[10px] shrink-0">
-            <span className="text-green-400">STT: Web Speech API</span>
-            <span className="text-green-400">TTS: Web Speech API</span>
-          </div>
-        </div>
-      )}
-
-      {/* Reopen debug button */}
-      {!showDebug && (
-        <button
-          onClick={() => setShowDebug(true)}
-          className="absolute top-2 right-2 z-50 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-500 hover:text-white text-xs px-2 py-1 rounded border border-zinc-700"
-        >
-          🐛 Debug
-        </button>
-      )}
-
+    <div className="flex flex-col h-[calc(100dvh-180px)] max-h-[700px] md:h-[calc(100dvh-160px)]">
       {/* Header */}
       <div className="flex items-center justify-between mb-4 pb-4 border-b border-zinc-800">
         <div className="flex items-center gap-3">
@@ -442,7 +315,7 @@ export default function GrammarInterface() {
               I'll teach you how REAL people talk. Not that textbook bullshit.
             </p>
             {voicesLoaded && (
-              <p className="text-green-500 text-sm mt-4">Web Speech API ready</p>
+              <p className="text-green-500 text-sm mt-4 animate-pulse">Ready to roast your grammar</p>
             )}
           </div>
         ) : (
@@ -541,7 +414,7 @@ export default function GrammarInterface() {
                 {isRecording ? "Tap to stop" : "Tap to record"}
               </p>
               {voicesLoaded && (
-                <p className="text-[10px] text-green-600">Web Speech API active</p>
+                <p className="text-[10px] text-green-600">Voice ready</p>
               )}
             </div>
           )}
