@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     // Prepare the payload for NVIDIA
     const nvidiaFormData = new FormData();
     nvidiaFormData.append('file', file);
-    nvidiaFormData.append('model', 'nvidia/parakeet-ctc-1.1b-all');
+    nvidiaFormData.append('model', 'nvidia/parakeet-ctc-1.1b-asr');
     nvidiaFormData.append('language', 'en');
     nvidiaFormData.append('response_format', 'json');
 

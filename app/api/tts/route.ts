@@ -24,10 +24,9 @@ export async function POST(req: NextRequest) {
     }
 
     const payload = {
-      model: 'nvidia/tts-fastpitch-hifigan',
+      model: 'nvidia/magpie-tts-multilingual',
       input: text,
-      voice: voice || 'English-US.Male-1',
-      response_format: 'mp3',
+      voice: voice || 'en-US',
     };
 
     const response = await fetch(`${NVIDIA_NIM_BASE_URL}/audio/speech`, {
