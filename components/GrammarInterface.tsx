@@ -309,8 +309,8 @@ export default function GrammarInterface() {
       const audio = await window.puter.ai.txt2speech(cleanText, {
         provider: "openai",
         model: "tts-1",
-        voice: "nova",
-        instructions: "You're a sarcastic, annoyed AI assistant. Be conversational and casual. Don't pause before the last word. Sound like you've seen some shit."
+        voice: "onyx",
+        instructions: "You're a bitter, cynical 500-year-old scholar who's tired of everything. Speak with deep disappointment and disdain. Heavy sighs. Slow, weary delivery. Like you've seen civilizations fall and now you're correcting grammar. Sound exhausted, not angry. Emphasize the swear words with disgust."
       });
       audio.onended = () => {
         setIsSpeaking(false);
