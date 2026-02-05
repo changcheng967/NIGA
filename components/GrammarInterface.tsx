@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 declare global {
   interface Window {
@@ -41,14 +41,58 @@ export default function GrammarInterface() {
   const [puterReady, setPuterReady] = useState(false);
   const [puterError, setPuterError] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
+  const [voicesLoaded, setVoicesLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const speechRecognitionRef = useRef<any>(null);
+  const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Preload Web Speech API voices
+  useEffect(() => {
+    if ('speechSynthesis' in window) {
+      const loadVoices = () => {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          // Try to find a good male voice with personality
+          const preferredVoices = [
+            'Google US English',
+            'Microsoft David',
+            'Microsoft Guy',
+            'Daniel',
+            'Alex',
+            'Fred',
+            'Junior',
+            'Ralph',
+          ];
+          for (const name of preferredVoices) {
+            const voice = voices.find(v => v.name.includes(name));
+            if (voice) {
+              selectedVoiceRef.current = voice;
+              break;
+            }
+          }
+          // Fallback to any English voice
+          if (!selectedVoiceRef.current) {
+            const englishVoice = voices.find(v => v.lang.startsWith('en'));
+            if (englishVoice) selectedVoiceRef.current = englishVoice;
+          }
+          setVoicesLoaded(true);
+        }
+      };
+
+      // Chrome loads voices asynchronously
+      if (window.speechSynthesis.getVoices().length === 0) {
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+      } else {
+        loadVoices();
+      }
+    }
+  }, []);
 
   useEffect(() => {
     // Check for Puter.js with timeout
@@ -58,6 +102,7 @@ export default function GrammarInterface() {
       if (window.puter?.ai) {
         setPuterReady(true);
         clearInterval(checkPuter);
+        console.log("Puter.js loaded - using high-quality voice");
       } else if (attempts > 50) {
         // 5 seconds timeout - switch to fallback
         clearInterval(checkPuter);
@@ -69,25 +114,82 @@ export default function GrammarInterface() {
     return () => clearInterval(checkPuter);
   }, []);
 
-  // TTS using Web Speech API (fallback)
-  const speakFallback = (text: string) => {
+  // Stop any ongoing speech
+  const stopSpeech = useCallback(() => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+  }, []);
+
+  // TTS using Web Speech API (fallback) - enhanced with personality
+  const speakFallback = useCallback((text: string) => {
     if (!window.speechSynthesis) return;
+    stopSpeech();
     setIsSpeaking(true);
-    const cleanText = text.replace(/\*\*/g, "").replace(/\*/g, "");
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.rate = 1.1;
-    utterance.pitch = 0.9;
-    // Try to get a male voice
-    const voices = window.speechSynthesis.getVoices();
-    const maleVoice = voices.find(v => v.name.includes('Male') || v.name.includes('David') || v.name.includes('James'));
-    if (maleVoice) utterance.voice = maleVoice;
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-    window.speechSynthesis.speak(utterance);
-  };
+
+    // Clean text but keep some personality markers
+    let cleanText = text.replace(/\*\*/g, "").replace(/\*/g, "");
+
+    // Add dramatic pauses for emphasis (replacing ellipses with brief pauses)
+    // We'll split by sentences and speak them with slight delays
+    const sentences = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
+
+    let sentenceIndex = 0;
+
+    const speakNextSentence = () => {
+      if (sentenceIndex >= sentences.length) {
+        setIsSpeaking(false);
+        return;
+      }
+
+      const sentence = sentences[sentenceIndex].trim();
+      if (!sentence) {
+        sentenceIndex++;
+        speakNextSentence();
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(sentence);
+
+      // Voice settings for sarcastic personality
+      utterance.rate = 1.05;        // Slightly faster for casual feel
+      utterance.pitch = 0.85;       // Lower pitch for male voice
+      utterance.volume = 1.0;
+
+      // Use selected voice if available
+      if (selectedVoiceRef.current) {
+        utterance.voice = selectedVoiceRef.current;
+      }
+
+      // Add emphasis to certain words (caps or phrases in quotes)
+      if (sentence.includes('*') || sentence.includes('"') || /[A-Z]{2,}/.test(sentence)) {
+        utterance.pitch += 0.1;
+      }
+
+      utterance.onend = () => {
+        sentenceIndex++;
+        // Small pause between sentences for dramatic effect
+        if (sentenceIndex < sentences.length) {
+          setTimeout(speakNextSentence, 150);
+        } else {
+          setIsSpeaking(false);
+        }
+      };
+
+      utterance.onerror = (e) => {
+        console.error("Speech error:", e);
+        setIsSpeaking(false);
+      };
+
+      window.speechSynthesis.speak(utterance);
+    };
+
+    speakNextSentence();
+  }, [stopSpeech]);
 
   // TTS using Puter.js
-  const speakPuter = async (text: string) => {
+  const speakPuter = useCallback(async (text: string) => {
     if (!window.puter?.ai) return;
     setIsSpeaking(true);
     try {
@@ -96,21 +198,31 @@ export default function GrammarInterface() {
         provider: "openai",
         model: "tts-1",
         voice: "nova",
-        instructions: "You're a sarcastic, annoyed AI assistant. Be conversational and casual. Don't pause before the last word."
+        instructions: "You're a sarcastic, annoyed AI assistant. Be conversational and casual. Don't pause before the last word. Sound like you've seen some shit."
       });
       audio.onended = () => setIsSpeaking(false);
-      audio.onerror = () => setIsSpeaking(false);
+      audio.onerror = () => {
+        setIsSpeaking(false);
+        // If Puter TTS fails, switch to fallback
+        console.error("Puter TTS failed, switching to fallback");
+        setUseFallback(true);
+        speakFallback(text);
+      };
       audio.play();
     } catch (error) {
       console.error("TTS error:", error);
       setIsSpeaking(false);
+      // Fall back to Web Speech API on error
+      setUseFallback(true);
+      speakFallback(text);
     }
-  };
+  }, [speakFallback]);
 
   const speak = useFallback ? speakFallback : speakPuter;
 
   const processMessage = async (userMessage: string) => {
     setInput("");
+    stopSpeech();
     const newUserMessage: Message = { role: "user", content: userMessage };
     setMessages((prev) => [...prev, newUserMessage]);
     setIsLoading(true);
@@ -121,7 +233,7 @@ export default function GrammarInterface() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMessage,
-          history: messages
+          history: messages.slice(-10) // Keep last 10 messages for context
         }),
       });
       if (!response.ok) throw new Error("Failed");
@@ -142,7 +254,7 @@ export default function GrammarInterface() {
   const startRecordingFallback = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setInput("Speech not supported in this browser");
+      setInput("Speech not supported in this browser, fuck");
       setTimeout(() => setInput(""), 3000);
       return;
     }
@@ -151,14 +263,22 @@ export default function GrammarInterface() {
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.lang = "en-US";
+    recognition.maxAlternatives = 1;
 
     speechRecognitionRef.current = recognition;
 
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
+      const confidence = event.results[0][0].confidence;
+
       setInput(transcript);
-      if (transcript.trim()) {
+
+      // Only process if we're reasonably confident
+      if (transcript.trim() && confidence > 0.5) {
         processMessage(transcript);
+      } else if (confidence <= 0.5) {
+        setInput("Didn't quite catch that, speak the fuck up");
+        setTimeout(() => setInput(""), 2500);
       }
       setIsRecording(false);
       setIsLoading(false);
@@ -166,30 +286,53 @@ export default function GrammarInterface() {
 
     recognition.onerror = (event: any) => {
       console.error("Speech recognition error:", event.error);
-      if (event.error === 'not-allowed') {
-        setInput("Enable mic access you dumb shit");
-      } else if (event.error === 'no-speech') {
-        setInput("Didn't hear shit, try again");
-      } else {
-        setInput("fuck, didn't catch that");
+      let errorMsg = "fuck, didn't catch that";
+
+      switch (event.error) {
+        case 'not-allowed':
+          errorMsg = "Enable mic access you dumb shit";
+          break;
+        case 'no-speech':
+          errorMsg = "Didn't hear shit, try again";
+          break;
+        case 'network':
+          errorMsg = "Network fucked, try again";
+          break;
+        case 'aborted':
+          // User stopped recording, don't show error
+          return;
       }
-      setTimeout(() => setInput(""), 3000);
+
+      setInput(errorMsg);
+      setTimeout(() => setInput(""), 2500);
       setIsRecording(false);
       setIsLoading(false);
     };
 
     recognition.onend = () => {
-      setIsRecording(false);
-      setIsLoading(false);
+      if (isRecording) {
+        setIsRecording(false);
+        setIsLoading(false);
+      }
     };
 
-    recognition.start();
+    try {
+      recognition.start();
+    } catch (e) {
+      console.error("Failed to start recognition:", e);
+      setInput("Mic fucked, try again");
+      setTimeout(() => setInput(""), 2000);
+    }
   };
 
   // Stop recording using Web Speech API (fallback)
   const stopRecordingFallback = () => {
     if (speechRecognitionRef.current) {
-      speechRecognitionRef.current.stop();
+      try {
+        speechRecognitionRef.current.stop();
+      } catch (e) {
+        // Already stopped
+      }
       speechRecognitionRef.current = null;
     }
   };
@@ -211,6 +354,9 @@ export default function GrammarInterface() {
       }
       setIsRecording(false);
     } else {
+      // Stop any ongoing speech when starting to record
+      stopSpeech();
+
       // Start recording
       if (useFallback) {
         startRecordingFallback();
@@ -269,10 +415,13 @@ export default function GrammarInterface() {
 
   const clearChat = () => {
     setMessages([]);
-    setIsSpeaking(false);
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
+    stopSpeech();
+  };
+
+  // Manual toggle for fallback mode
+  const toggleFallbackMode = () => {
+    stopSpeech();
+    setUseFallback(!useFallback);
   };
 
   return (
@@ -286,17 +435,40 @@ export default function GrammarInterface() {
             <p className="text-zinc-500 text-[10px] md:text-xs">Native Interactive Grammar Assistant</p>
           </div>
         </div>
-        {messages.length > 0 && (
-          <button
-            onClick={(e) => { e.preventDefault(); clearChat(); }}
-            className="text-zinc-500 hover:text-white text-sm transition-colors flex items-center gap-1 select-none touch-manipulation"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            <span className="hidden sm:inline">Clear</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Voice mode indicator */}
+          {puterReady && !useFallback && (
+            <span className="text-[10px] px-2 py-1 bg-green-900/50 text-green-400 rounded-full hidden sm:inline">
+              Premium Voice
+            </span>
+          )}
+          {useFallback && (
+            <span className="text-[10px] px-2 py-1 bg-yellow-900/50 text-yellow-400 rounded-full hidden sm:inline">
+              Browser Voice
+            </span>
+          )}
+          {/* Fallback toggle button */}
+          {puterReady && (
+            <button
+              onClick={toggleFallbackMode}
+              className="text-zinc-500 hover:text-white text-xs transition-colors px-2 py-1 rounded hover:bg-zinc-800 select-none"
+              title="Switch voice mode"
+            >
+              {useFallback ? "Use Premium" : "Use Browser"}
+            </button>
+          )}
+          {messages.length > 0 && (
+            <button
+              onClick={(e) => { e.preventDefault(); clearChat(); }}
+              className="text-zinc-500 hover:text-white text-sm transition-colors flex items-center gap-1 select-none touch-manipulation"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              <span className="hidden sm:inline">Clear</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Chat Messages */}
@@ -314,7 +486,10 @@ export default function GrammarInterface() {
               <p className="text-zinc-600 text-sm mt-4">Loading voice AI...</p>
             )}
             {(puterError || useFallback) && (
-              <p className="text-yellow-500 text-sm mt-4">Using browser voice fallback</p>
+              <p className="text-yellow-500 text-sm mt-4 animate-pulse">Using browser voice fallback</p>
+            )}
+            {puterReady && !useFallback && (
+              <p className="text-green-500 text-sm mt-4">Premium voice loaded</p>
             )}
           </div>
         ) : (
@@ -369,6 +544,15 @@ export default function GrammarInterface() {
                   <span className="w-0.5 h-2 bg-green-500 rounded-full animate-pulse" style={{ animationDelay: "300ms" }} />
                 </div>
                 <span>Speaking...</span>
+                <button
+                  onClick={stopSpeech}
+                  className="ml-2 text-zinc-500 hover:text-white transition-colors"
+                  title="Stop speaking"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -411,11 +595,16 @@ export default function GrammarInterface() {
           </button>
 
           {!input && (
-            <p className="text-zinc-600 text-sm select-none">
-              {useFallback ? (isRecording ? "Tap to stop" : "Tap to record") :
-              puterReady ? (isRecording ? "Tap to stop" : "Tap to record") :
-              puterError ? "Voice AI failed" : "Loading..."}
-            </p>
+            <div className="flex flex-col items-center">
+              <p className="text-zinc-600 text-sm select-none">
+                {useFallback ? (isRecording ? "Tap to stop" : "Tap to record") :
+                puterReady ? (isRecording ? "Tap to stop" : "Tap to record") :
+                puterError ? "Voice AI failed" : "Loading..."}
+              </p>
+              {puterReady && !useFallback && (
+                <p className="text-[10px] text-green-600">Premium voice active</p>
+              )}
+            </div>
           )}
         </div>
       </div>
