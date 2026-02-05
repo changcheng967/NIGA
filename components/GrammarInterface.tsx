@@ -13,6 +13,23 @@ interface Message {
   content: string;
 }
 
+// Get supported MIME type for audio recording
+const getMimeType = () => {
+  const types = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/aac',
+    'audio/wav'
+  ];
+  for (const type of types) {
+    if (MediaRecorder.isTypeSupported(type)) {
+      return type;
+    }
+  }
+  return '';
+};
+
 export default function GrammarInterface() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -20,6 +37,7 @@ export default function GrammarInterface() {
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [puterReady, setPuterReady] = useState(false);
+  const [puterError, setPuterError] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -29,10 +47,18 @@ export default function GrammarInterface() {
   }, [messages]);
 
   useEffect(() => {
+    // Check for Puter.js with timeout
+    let attempts = 0;
     const checkPuter = setInterval(() => {
+      attempts++;
       if (window.puter?.ai) {
         setPuterReady(true);
         clearInterval(checkPuter);
+      } else if (attempts > 50) {
+        // 5 seconds timeout
+        clearInterval(checkPuter);
+        setPuterError(true);
+        console.error("Puter.js failed to load");
       }
     }, 100);
     return () => clearInterval(checkPuter);
@@ -87,10 +113,15 @@ export default function GrammarInterface() {
     }
   };
 
-  const toggleRecording = async () => {
+  const toggleRecording = async (e?: React.MouseEvent | React.TouchEvent) => {
+    // Prevent double-firing on touch devices
+    if (e) {
+      e.preventDefault();
+    }
+
     if (isRecording) {
       // Stop recording
-      if (mediaRecorderRef.current) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
         setIsRecording(false);
       }
@@ -99,18 +130,22 @@ export default function GrammarInterface() {
       if (!puterReady) return;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
+        const mimeType = getMimeType();
+        const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
         mediaRecorderRef.current = mediaRecorder;
         audioChunksRef.current = [];
+
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) audioChunksRef.current.push(event.data);
         };
+
         mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
           stream.getTracks().forEach(track => track.stop());
           setIsLoading(true);
+
           try {
-            const audioFile = new File([audioBlob], "recording.webm", { type: "audio/webm" });
+            const audioFile = new File([audioBlob], "recording." + (mimeType?.split(';')[0]?.split('/')[1] || 'webm'), { type: mimeType || 'audio/webm' });
             const result = await window.puter.ai.speech2txt(audioFile, {
               model: "gpt-4o-transcribe"
             });
@@ -123,10 +158,19 @@ export default function GrammarInterface() {
             setIsLoading(false);
           }
         };
+
         mediaRecorder.start();
         setIsRecording(true);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Microphone error:", error);
+        if (error.name === 'NotAllowedError') {
+          setInput("Enable mic access you dumb shit");
+        } else if (error.name === 'NotFoundError') {
+          setInput("No mic found on this device");
+        } else {
+          setInput("Mic failed, try again");
+        }
+        setTimeout(() => setInput(""), 3000);
       }
     }
   };
@@ -137,7 +181,7 @@ export default function GrammarInterface() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-200px)] max-h-[700px] md:h-[calc(100vh-180px)]">
+    <div className="flex flex-col h-[calc(100dvh-180px)] max-h-[700px] md:h-[calc(100dvh-160px)]">
       {/* Header */}
       <div className="flex items-center justify-between mb-4 pb-4 border-b border-zinc-800">
         <div className="flex items-center gap-3">
@@ -149,8 +193,8 @@ export default function GrammarInterface() {
         </div>
         {messages.length > 0 && (
           <button
-            onClick={clearChat}
-            className="text-zinc-500 hover:text-white text-sm transition-colors flex items-center gap-1 select-none"
+            onClick={(e) => { e.preventDefault(); clearChat(); }}
+            className="text-zinc-500 hover:text-white text-sm transition-colors flex items-center gap-1 select-none touch-manipulation"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -171,8 +215,11 @@ export default function GrammarInterface() {
             <p className="text-zinc-500 text-sm max-w-xs">
               I'll teach you how REAL people talk. Not that textbook bullshit.
             </p>
-            {!puterReady && (
+            {!puterReady && !puterError && (
               <p className="text-zinc-600 text-sm mt-4">Loading voice AI...</p>
+            )}
+            {puterError && (
+              <p className="text-red-500 text-sm mt-4">Voice AI failed to load. Refresh the page.</p>
             )}
           </div>
         ) : (
@@ -248,6 +295,7 @@ export default function GrammarInterface() {
           {/* RECORD BUTTON - Tap to start/stop */}
           <button
             onClick={toggleRecording}
+            onTouchEnd={toggleRecording}
             disabled={isLoading || !puterReady}
             className={`w-16 h-16 md:w-20 md:h-20 rounded-full flex items-center justify-center transition-all shrink-0 select-none touch-manipulation ${
               isRecording
@@ -269,7 +317,7 @@ export default function GrammarInterface() {
 
           {!input && (
             <p className="text-zinc-600 text-sm select-none">
-              {puterReady ? (isRecording ? "Tap to stop" : "Tap to record") : "Loading..."}
+              {puterReady ? (isRecording ? "Tap to stop" : "Tap to record") : puterError ? "Voice AI failed" : "Loading..."}
             </p>
           )}
         </div>

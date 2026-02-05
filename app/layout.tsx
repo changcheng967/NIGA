@@ -11,6 +11,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "NIGA - Native Interactive Grammar Assistant",
   description: "Learn how to speak like a true savage",
+  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no",
   icons: {
     icon: "/logo.jpg",
     apple: "/logo.jpg",
