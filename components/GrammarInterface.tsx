@@ -475,19 +475,36 @@ export default function GrammarInterface() {
 
           try {
             const audioFile = new File([audioBlob], "recording." + (mimeType?.split(';')[0]?.split('/')[1] || 'webm'), { type: mimeType || 'audio/webm' });
+            addLog('info', `Audio file size: ${(audioBlob.size / 1024).toFixed(1)}KB`);
             addLog('info', 'Sending to Puter STT...');
 
-            const result = await window.puter.ai.speech2txt(audioFile, {
+            // Add timeout wrapper
+            const timeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('STT timeout after 15s')), 15000);
+            });
+
+            const sttPromise = window.puter.ai.speech2txt(audioFile, {
               model: "gpt-4o-transcribe"
             });
+
+            const result = await Promise.race([sttPromise, timeoutPromise]) as any;
+            addLog('info', `STT response type: ${typeof result}, has text: ${!!result?.text}`);
+
             const transcript = (result?.text || result || "").toString().trim();
             addLog('success', `Got transcript: "${transcript}"`);
             setInput(transcript);
             if (transcript) processMessage(transcript);
           } catch (error: any) {
-            addLog('error', `STT error: ${error.message}`);
+            addLog('error', `STT error: ${error.message || error}`);
             console.error("STT error:", error);
-            setInput("fuck, didn't catch that");
+
+            // If Puter fails, try switching to fallback
+            if (error.message?.includes('timeout') || error.message?.includes('network')) {
+              addLog('warning', 'Puter STT failed, suggesting fallback mode');
+              setInput("Puter fucked up, use browser voice mode");
+            } else {
+              setInput("fuck, didn't catch that");
+            }
             setIsLoading(false);
           }
         };
