@@ -532,6 +532,14 @@ export default function GrammarInterface() {
     }
   };
 
+  const copyLogs = () => {
+    const logText = debugLogs.map(log =>
+      `[${log.time}] [${log.type.toUpperCase()}] ${log.message}`
+    ).join('\n');
+    navigator.clipboard.writeText(logText);
+    addLog('success', 'Logs copied to clipboard!');
+  };
+
   return (
     <div className="flex flex-col h-[calc(100dvh-180px)] max-h-[700px] md:h-[calc(100dvh-160px)] relative">
       {/* Debug Panel */}
@@ -542,12 +550,24 @@ export default function GrammarInterface() {
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
               DEBUG CONSOLE
             </span>
-            <button
-              onClick={() => setShowDebug(false)}
-              className="text-zinc-500 hover:text-white text-xs"
-            >
-              ✕ Close
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={copyLogs}
+                className="text-zinc-500 hover:text-white text-xs flex items-center gap-1"
+                title="Copy all logs"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                Copy
+              </button>
+              <button
+                onClick={() => setShowDebug(false)}
+                className="text-zinc-500 hover:text-white text-xs"
+              >
+                ✕ Close
+              </button>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] leading-tight">
             {debugLogs.length === 0 ? (
