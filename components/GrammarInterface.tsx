@@ -15,6 +15,12 @@ interface Message {
   content: string;
 }
 
+interface DebugLog {
+  time: string;
+  type: 'info' | 'success' | 'error' | 'warning';
+  message: string;
+}
+
 // Get supported MIME type for audio recording
 const getMimeType = () => {
   const types = [
@@ -42,11 +48,20 @@ export default function GrammarInterface() {
   const [puterError, setPuterError] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
   const [voicesLoaded, setVoicesLoaded] = useState(false);
+  const [showDebug, setShowDebug] = useState(true);
+  const [debugLogs, setDebugLogs] = useState<DebugLog[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const speechRecognitionRef = useRef<any>(null);
   const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+
+  // Debug logging function
+  const addLog = useCallback((type: DebugLog['type'], message: string) => {
+    const time = new Date().toLocaleTimeString();
+    setDebugLogs(prev => [...prev.slice(-49), { time, type, message }]);
+    console.log(`[${type.toUpperCase()}]`, message);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -54,9 +69,15 @@ export default function GrammarInterface() {
 
   // Preload Web Speech API voices
   useEffect(() => {
+    addLog('info', 'Checking Web Speech API support...');
+
     if ('speechSynthesis' in window) {
+      addLog('success', 'speechSynthesis API available');
+
       const loadVoices = () => {
         const voices = window.speechSynthesis.getVoices();
+        addLog('info', `Found ${voices.length} voices`);
+
         if (voices.length > 0) {
           // Try to find a good male voice with personality
           const preferredVoices = [
@@ -69,17 +90,25 @@ export default function GrammarInterface() {
             'Junior',
             'Ralph',
           ];
+
           for (const name of preferredVoices) {
             const voice = voices.find(v => v.name.includes(name));
             if (voice) {
               selectedVoiceRef.current = voice;
+              addLog('success', `Selected voice: ${voice.name}`);
               break;
             }
           }
+
           // Fallback to any English voice
           if (!selectedVoiceRef.current) {
             const englishVoice = voices.find(v => v.lang.startsWith('en'));
-            if (englishVoice) selectedVoiceRef.current = englishVoice;
+            if (englishVoice) {
+              selectedVoiceRef.current = englishVoice;
+              addLog('warning', `Using fallback voice: ${englishVoice.name}`);
+            } else {
+              addLog('error', 'No English voice found!');
+            }
           }
           setVoicesLoaded(true);
         }
@@ -88,45 +117,67 @@ export default function GrammarInterface() {
       // Chrome loads voices asynchronously
       if (window.speechSynthesis.getVoices().length === 0) {
         window.speechSynthesis.onvoiceschanged = loadVoices;
+        addLog('info', 'Waiting for voices to load...');
       } else {
         loadVoices();
       }
+    } else {
+      addLog('error', 'speechSynthesis API NOT available');
     }
-  }, []);
+
+    // Check SpeechRecognition
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      addLog('success', 'SpeechRecognition API available');
+    } else {
+      addLog('error', 'SpeechRecognition API NOT available');
+    }
+  }, [addLog]);
 
   useEffect(() => {
     // Check for Puter.js with timeout
     let attempts = 0;
+    addLog('info', 'Checking for Puter.js...');
+
     const checkPuter = setInterval(() => {
       attempts++;
       if (window.puter?.ai) {
         setPuterReady(true);
         clearInterval(checkPuter);
+        addLog('success', 'Puter.js loaded successfully!');
         console.log("Puter.js loaded - using high-quality voice");
       } else if (attempts > 50) {
         // 5 seconds timeout - switch to fallback
         clearInterval(checkPuter);
         setPuterError(true);
         setUseFallback(true);
+        addLog('warning', 'Puter.js failed to load, using fallback');
         console.error("Puter.js failed to load, using Web Speech API fallback");
+      } else if (attempts % 10 === 0) {
+        addLog('info', `Still waiting for Puter.js... (${attempts * 100}ms)`);
       }
     }, 100);
     return () => clearInterval(checkPuter);
-  }, []);
+  }, [addLog]);
 
   // Stop any ongoing speech
   const stopSpeech = useCallback(() => {
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
+      addLog('info', 'Speech stopped');
     }
     setIsSpeaking(false);
-  }, []);
+  }, [addLog]);
 
   // TTS using Web Speech API (fallback) - enhanced with personality
   const speakFallback = useCallback((text: string) => {
-    if (!window.speechSynthesis) return;
+    if (!window.speechSynthesis) {
+      addLog('error', 'speechSynthesis not available for TTS');
+      return;
+    }
     stopSpeech();
     setIsSpeaking(true);
+    addLog('info', `Speaking with fallback: "${text.substring(0, 30)}..."`);
 
     // Clean text but keep some personality markers
     let cleanText = text.replace(/\*\*/g, "").replace(/\*/g, "");
@@ -140,6 +191,7 @@ export default function GrammarInterface() {
     const speakNextSentence = () => {
       if (sentenceIndex >= sentences.length) {
         setIsSpeaking(false);
+        addLog('success', 'Finished speaking');
         return;
       }
 
@@ -174,10 +226,12 @@ export default function GrammarInterface() {
           setTimeout(speakNextSentence, 150);
         } else {
           setIsSpeaking(false);
+          addLog('success', 'Finished speaking');
         }
       };
 
       utterance.onerror = (e) => {
+        addLog('error', `Speech error: ${e}`);
         console.error("Speech error:", e);
         setIsSpeaking(false);
       };
@@ -186,12 +240,14 @@ export default function GrammarInterface() {
     };
 
     speakNextSentence();
-  }, [stopSpeech]);
+  }, [stopSpeech, addLog]);
 
   // TTS using Puter.js
   const speakPuter = useCallback(async (text: string) => {
     if (!window.puter?.ai) return;
     setIsSpeaking(true);
+    addLog('info', `Speaking with Puter: "${text.substring(0, 30)}..."`);
+
     try {
       let cleanText = text.replace(/\*\*/g, "").replace(/\*/g, "");
       const audio = await window.puter.ai.txt2speech(cleanText, {
@@ -200,23 +256,28 @@ export default function GrammarInterface() {
         voice: "nova",
         instructions: "You're a sarcastic, annoyed AI assistant. Be conversational and casual. Don't pause before the last word. Sound like you've seen some shit."
       });
-      audio.onended = () => setIsSpeaking(false);
-      audio.onerror = () => {
+      audio.onended = () => {
         setIsSpeaking(false);
+        addLog('success', 'Finished speaking with Puter');
+      };
+      audio.onerror = (e: any) => {
+        setIsSpeaking(false);
+        addLog('error', `Puter TTS error: ${e}`);
         // If Puter TTS fails, switch to fallback
         console.error("Puter TTS failed, switching to fallback");
         setUseFallback(true);
         speakFallback(text);
       };
       audio.play();
-    } catch (error) {
+    } catch (error: any) {
+      addLog('error', `TTS error: ${error.message}`);
       console.error("TTS error:", error);
       setIsSpeaking(false);
       // Fall back to Web Speech API on error
       setUseFallback(true);
       speakFallback(text);
     }
-  }, [speakFallback]);
+  }, [speakFallback, addLog]);
 
   const speak = useFallback ? speakFallback : speakPuter;
 
@@ -226,6 +287,7 @@ export default function GrammarInterface() {
     const newUserMessage: Message = { role: "user", content: userMessage };
     setMessages((prev) => [...prev, newUserMessage]);
     setIsLoading(true);
+    addLog('info', `Processing: "${userMessage}"`);
 
     try {
       const response = await fetch("/api/chat", {
@@ -240,8 +302,10 @@ export default function GrammarInterface() {
       const data = await response.json();
       const aiResponse = data.response;
       setMessages((prev) => [...prev, { role: "assistant", content: aiResponse }]);
+      addLog('success', `Got response: "${aiResponse.substring(0, 30)}..."`);
       speak(aiResponse);
-    } catch {
+    } catch (error: any) {
+      addLog('error', `Chat error: ${error.message}`);
       const errorMsg = "What the fuck happened. Try again, yeh";
       setMessages((prev) => [...prev, { role: "assistant", content: errorMsg }]);
       speak(errorMsg);
@@ -252,8 +316,11 @@ export default function GrammarInterface() {
 
   // Start recording using Web Speech API (fallback)
   const startRecordingFallback = () => {
+    addLog('info', 'Starting Web Speech Recognition...');
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
+      addLog('error', 'SpeechRecognition not supported!');
       setInput("Speech not supported in this browser, fuck");
       setTimeout(() => setInput(""), 3000);
       return;
@@ -266,17 +333,20 @@ export default function GrammarInterface() {
     recognition.maxAlternatives = 1;
 
     speechRecognitionRef.current = recognition;
+    addLog('info', `Recognition config: lang=${recognition.lang}`);
 
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       const confidence = event.results[0][0].confidence;
 
+      addLog('info', `Got transcript: "${transcript}" (confidence: ${(confidence * 100).toFixed(0)}%)`);
       setInput(transcript);
 
       // Only process if we're reasonably confident
       if (transcript.trim() && confidence > 0.5) {
         processMessage(transcript);
       } else if (confidence <= 0.5) {
+        addLog('warning', 'Low confidence, not processing');
         setInput("Didn't quite catch that, speak the fuck up");
         setTimeout(() => setInput(""), 2500);
       }
@@ -285,6 +355,7 @@ export default function GrammarInterface() {
     };
 
     recognition.onerror = (event: any) => {
+      addLog('error', `Recognition error: ${event.error}`);
       console.error("Speech recognition error:", event.error);
       let errorMsg = "fuck, didn't catch that";
 
@@ -294,12 +365,14 @@ export default function GrammarInterface() {
           break;
         case 'no-speech':
           errorMsg = "Didn't hear shit, try again";
+          addLog('warning', 'No speech detected');
           break;
         case 'network':
           errorMsg = "Network fucked, try again";
           break;
         case 'aborted':
           // User stopped recording, don't show error
+          addLog('info', 'Recognition aborted');
           return;
       }
 
@@ -309,7 +382,12 @@ export default function GrammarInterface() {
       setIsLoading(false);
     };
 
+    recognition.onstart = () => {
+      addLog('success', 'Recognition started - speak now!');
+    };
+
     recognition.onend = () => {
+      addLog('info', 'Recognition ended');
       if (isRecording) {
         setIsRecording(false);
         setIsLoading(false);
@@ -318,7 +396,8 @@ export default function GrammarInterface() {
 
     try {
       recognition.start();
-    } catch (e) {
+    } catch (e: any) {
+      addLog('error', `Failed to start recognition: ${e}`);
       console.error("Failed to start recognition:", e);
       setInput("Mic fucked, try again");
       setTimeout(() => setInput(""), 2000);
@@ -330,6 +409,7 @@ export default function GrammarInterface() {
     if (speechRecognitionRef.current) {
       try {
         speechRecognitionRef.current.stop();
+        addLog('info', 'Stopped recognition');
       } catch (e) {
         // Already stopped
       }
@@ -365,10 +445,20 @@ export default function GrammarInterface() {
         return;
       }
 
-      if (!puterReady) return;
+      if (!puterReady) {
+        addLog('warning', 'Puter not ready, cannot record');
+        return;
+      }
+
+      addLog('info', 'Starting Puter audio recording...');
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        addLog('success', 'Microphone access granted');
+
         const mimeType = getMimeType();
+        addLog('info', `Using MIME type: ${mimeType || 'default'}`);
+
         const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
         mediaRecorderRef.current = mediaRecorder;
         audioChunksRef.current = [];
@@ -378,19 +468,24 @@ export default function GrammarInterface() {
         };
 
         mediaRecorder.onstop = async () => {
+          addLog('info', 'Recording stopped, processing...');
           const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
           stream.getTracks().forEach(track => track.stop());
           setIsLoading(true);
 
           try {
             const audioFile = new File([audioBlob], "recording." + (mimeType?.split(';')[0]?.split('/')[1] || 'webm'), { type: mimeType || 'audio/webm' });
+            addLog('info', 'Sending to Puter STT...');
+
             const result = await window.puter.ai.speech2txt(audioFile, {
               model: "gpt-4o-transcribe"
             });
             const transcript = (result?.text || result || "").toString().trim();
+            addLog('success', `Got transcript: "${transcript}"`);
             setInput(transcript);
             if (transcript) processMessage(transcript);
           } catch (error: any) {
+            addLog('error', `STT error: ${error.message}`);
             console.error("STT error:", error);
             setInput("fuck, didn't catch that");
             setIsLoading(false);
@@ -399,7 +494,9 @@ export default function GrammarInterface() {
 
         mediaRecorder.start();
         setIsRecording(true);
+        addLog('success', 'Recording started');
       } catch (error: any) {
+        addLog('error', `Microphone error: ${error.name} - ${error.message}`);
         console.error("Microphone error:", error);
         if (error.name === 'NotAllowedError') {
           setInput("Enable mic access you dumb shit");
@@ -416,16 +513,82 @@ export default function GrammarInterface() {
   const clearChat = () => {
     setMessages([]);
     stopSpeech();
+    addLog('info', 'Chat cleared');
   };
 
   // Manual toggle for fallback mode
   const toggleFallbackMode = () => {
     stopSpeech();
     setUseFallback(!useFallback);
+    addLog('info', `Switched to ${!useFallback ? 'fallback' : 'Puter'} mode`);
+  };
+
+  const getLogColor = (type: DebugLog['type']) => {
+    switch (type) {
+      case 'success': return 'text-green-400';
+      case 'error': return 'text-red-400';
+      case 'warning': return 'text-yellow-400';
+      default: return 'text-zinc-400';
+    }
   };
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-180px)] max-h-[700px] md:h-[calc(100dvh-160px)]">
+    <div className="flex flex-col h-[calc(100dvh-180px)] max-h-[700px] md:h-[calc(100dvh-160px)] relative">
+      {/* Debug Panel */}
+      {showDebug && (
+        <div className="absolute top-0 left-0 right-0 z-50 bg-black/95 border-b border-zinc-800 max-h-[200px] overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800 shrink-0">
+            <span className="text-xs font-bold text-white flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+              DEBUG CONSOLE
+            </span>
+            <button
+              onClick={() => setShowDebug(false)}
+              className="text-zinc-500 hover:text-white text-xs"
+            >
+              ✕ Close
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] leading-tight">
+            {debugLogs.length === 0 ? (
+              <p className="text-zinc-600">Waiting for events...</p>
+            ) : (
+              debugLogs.map((log, i) => (
+                <div key={i} className={`flex gap-2 ${getLogColor(log.type)}`}>
+                  <span className="text-zinc-600 shrink-0">[{log.time}]</span>
+                  <span className={getLogColor(log.type)}>[{log.type.toUpperCase()}]</span>
+                  <span className="text-zinc-300">{log.message}</span>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="px-3 py-1 border-t border-zinc-800 flex gap-3 text-[10px] shrink-0">
+            <span className={puterReady ? "text-green-400" : "text-zinc-600"}>
+              Puter.js: {puterReady ? "✓" : "✗"}
+            </span>
+            <span className={voicesLoaded ? "text-green-400" : "text-zinc-600"}>
+              Voices: {voicesLoaded ? "✓" : "✗"}
+            </span>
+            <span className={useFallback ? "text-yellow-400" : "text-zinc-600"}>
+              Mode: {useFallback ? "Fallback" : "Puter"}
+            </span>
+            <span className={selectedVoiceRef.current ? "text-green-400" : "text-zinc-600"}>
+              STT: {selectedVoiceRef.current ? "✓" : "✗"}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Reopen debug button */}
+      {!showDebug && (
+        <button
+          onClick={() => setShowDebug(true)}
+          className="absolute top-2 right-2 z-50 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-500 hover:text-white text-xs px-2 py-1 rounded border border-zinc-700"
+        >
+          🐛 Debug
+        </button>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-4 pb-4 border-b border-zinc-800">
         <div className="flex items-center gap-3">
